@@ -6,6 +6,7 @@ import {
   Check,
   Coffee,
   Download,
+  Grid2X2,
   LockKeyhole,
   LogOut,
   Minus,
@@ -15,6 +16,7 @@ import {
   ShoppingBag,
   Smartphone,
   Trash2,
+  List,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -23,6 +25,8 @@ type Item = {
   name: string;
   category: string;
   price: number;
+  price_mode?: "fixed" | "market" | "exchange" | "free" | "discount";
+  discount_percent?: number;
   emoji: string;
   color: string;
   image_url?: string;
@@ -30,10 +34,13 @@ type Item = {
 type Order = {
   id: string;
   phone: string;
+  governorate: string;
+  district?: string;
   items: string;
   total: number;
   status: OrderStatus;
   created_at: string;
+  status_changed_at?: string;
   order_items?: {
     id: number;
     name: string;
@@ -89,11 +96,33 @@ function formatOrderDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ar-EG");
 }
 
+function formatRelativeTime(value: string | undefined, now: number) {
+  if (!value) return "";
+  const elapsed = Math.max(0, now - new Date(value).getTime());
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return "تم التغيير الآن";
+  if (minutes < 60) return `تم التغيير منذ ${minutes} ${minutes === 1 ? "دقيقة" : "دقائق"}`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `تم التغيير منذ ${hours} ${hours === 1 ? "ساعة" : "ساعات"}`;
+  const days = Math.floor(hours / 24);
+  return `تم التغيير منذ ${days} ${days === 1 ? "يوم" : "أيام"}`;
+}
+
+function getItemUnitPrice(item: Item) {
+  if (item.price_mode === "market" || item.price_mode === "exchange" || item.price_mode === "free") return 0;
+  if (item.price_mode === "discount") return item.price * (1 - (item.discount_percent || 0) / 100);
+  return item.price;
+}
+
 export default function Home() {
   const [view, setView] = useState<"cashier" | "admin">("cashier");
   const [phone, setPhone] = useState("");
+  const [governorate, setGovernorate] = useState("الفيوم");
+  const [district, setDistrict] = useState("");
   const [query, setQuery] = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
   const [category, setCategory] = useState("الكل");
+  const [itemDisplayMode, setItemDisplayMode] = useState<"cards" | "list">("cards");
   const [cart, setCart] = useState<Record<number, number>>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState("");
@@ -113,6 +142,7 @@ export default function Home() {
   const [orderItem, setOrderItem] = useState("الكل");
   const [orderPeriod, setOrderPeriod] = useState("all");
   const [orderStatus, setOrderStatus] = useState("الكل");
+  const [currentTime, setCurrentTime] = useState(0);
   const cartRef = useRef<HTMLElement>(null);
   const radioRef = useRef<HTMLAudioElement>(null);
   const [radioPlaying, setRadioPlaying] = useState(false);
@@ -120,6 +150,7 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
+  const [pendingDeleteOrder, setPendingDeleteOrder] = useState<string | null>(null);
 
   const filteredItems = menuItems.filter(
     (item) =>
@@ -134,8 +165,12 @@ export default function Home() {
     }))
     .filter(({ item }) => item);
   const total = cartItems.reduce(
-    (sum, entry) => sum + entry.item.price * entry.quantity,
+    (sum, entry) =>
+      sum + getItemUnitPrice(entry.item) * entry.quantity,
     0,
+  );
+  const hasVariablePrice = cartItems.some(
+    ({ item }) => item.price_mode === "market" || item.price_mode === "exchange",
   );
   const cartCount = cartItems.length;
   const categories = [
@@ -150,6 +185,14 @@ export default function Home() {
     ),
   ];
   const filteredOrders = orders.filter((order) => {
+    const search = orderSearch.trim().toLowerCase();
+    if (
+      search &&
+      ![order.id, order.phone, order.governorate, order.district]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(search))
+    )
+      return false;
     const date = new Date(order.created_at);
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -202,12 +245,14 @@ export default function Home() {
   );
 
   useEffect(() => {
+    const initialClock = window.setTimeout(() => setCurrentTime(Date.now()), 0);
+    const clock = window.setInterval(() => setCurrentTime(Date.now()), 60000);
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     window.setTimeout(() => setIsIOS(ios), 0);
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     const handleInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
     window.addEventListener("beforeinstallprompt", handleInstallPrompt);
-    return () => window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+    return () => { window.clearTimeout(initialClock); window.clearInterval(clock); window.removeEventListener("beforeinstallprompt", handleInstallPrompt); };
   }, []);
 
   useEffect(() => {
@@ -308,8 +353,19 @@ export default function Home() {
       ...current,
       [id]: Math.max(0, (current[id] || 0) + delta),
     }));
+  const setQuantity = (id: number, value: string) => {
+    const quantity = Number(value);
+    setCart((current) => ({
+      ...current,
+      [id]: Number.isFinite(quantity) ? Math.max(0, Math.floor(quantity)) : 0,
+    }));
+  };
   const submitOrder = async () => {
     if (phone.trim().length < 8) return setNotice("اكتب رقم هاتف صحيح أولاً");
+    if (governorate === "الفيوم" && !district)
+      return setNotice("اختر المركز التابع لمحافظة الفيوم");
+    if (governorate === "أخرى" && !district.trim())
+      return setNotice("اكتب اسم محافظتك أولاً");
     if (!cartItems.length) return setNotice("أضف صنفاً واحداً على الأقل للسلة");
     const orderItems = cartItems
       .map(({ item, quantity }) => `${item.name} × ${quantity}`)
@@ -317,31 +373,46 @@ export default function Home() {
     const { error } = supabase
       ? await supabase.from("orders").insert({
           phone: phone.trim(),
+          governorate: governorate === "أخرى" ? district.trim() : governorate,
+          district: governorate === "الفيوم" ? district : null,
           items: cartItems.map(({ item, quantity }) => ({
             id: item.id,
             name: item.name,
             category: item.category,
             quantity,
             price: item.price,
+            final_price: getItemUnitPrice(item),
           })),
           total,
           status: "قيد التنفيذ",
         })
       : { error: null };
-    if (error) return setNotice("تعذر حفظ الطلب، راجع اتصال Supabase");
+    if (error) {
+      console.error("تعذر حفظ الطلب:", error);
+      return setNotice(
+        error.code === "PGRST204"
+          ? "حدّث جدول الطلبات في Supabase بإضافة المحافظة والمركز"
+          : "تعذر حفظ الطلب، راجع اتصال Supabase",
+      );
+    }
     setOrders((current) => [
       {
         id: `#${1043 + current.length}`,
         phone,
+        governorate,
+        district,
         items: orderItems,
         total,
         status: "قيد التنفيذ",
         created_at: new Date().toISOString(),
+        status_changed_at: new Date().toISOString(),
       },
       ...current,
     ]);
     setCart({});
     setPhone("");
+    setGovernorate("الفيوم");
+    setDistrict("");
     setTodayOrdersCount((count) => count + 1);
     setNotice("تم تسجيل الحجز بنجاح");
   };
@@ -354,9 +425,24 @@ export default function Home() {
       body: JSON.stringify({ id: numericId, status }),
     });
     if (!response.ok) return;
+    const changedAt = new Date().toISOString();
     setOrders((current) =>
-      current.map((order) => (order.id === id ? { ...order, status } : order)),
+      current.map((order) => (order.id === id ? { ...order, status, status_changed_at: changedAt } : order)),
     );
+  };
+
+  const deleteOrder = async (id: string) => {
+    const response = await fetch("/api/admin/orders", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(id.replace("#", "")) }),
+    });
+    if (!response.ok) {
+      setAdminError("تعذر حذف الطلب");
+      return;
+    }
+    setOrders((current) => current.filter((order) => order.id !== id));
+    setPendingDeleteOrder(null);
   };
 
   const openAdmin = () => {
@@ -469,8 +555,8 @@ export default function Home() {
           {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#c48738] text-white" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
         </div>
       </header>
-      <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-5 py-3 lg:hidden">
-        <div className="mx-auto grid max-w-[1440px] grid-cols-2 items-center gap-2">
+      <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-4 py-3 lg:hidden">
+        <div className="mx-auto grid max-w-[1440px] grid-cols-3 items-center gap-2">
           <nav className="flex h-14 w-full rounded-xl bg-[#eef0ea] p-1 text-xs font-semibold">
             <button
               onClick={() => setView("cashier")}
@@ -485,21 +571,20 @@ export default function Home() {
               الأدمن
             </button>
           </nav>
-          <div className="flex items-center justify-end gap-2">
-            <div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-2">
+          <div className="flex h-14 items-center justify-center rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-2">
               <p className="text-[10px] text-[#89918c]">طلبات اليوم</p>
               <p className="font-display text-lg font-bold text-[#173f3a]">
                 {todayOrdersCount}
               </p>
-            </div>
-            <button
+          </div>
+          <button
               onClick={() =>
                 cartRef.current?.scrollIntoView({
                   behavior: "smooth",
                   block: "center",
                 })
               }
-              className="relative grid size-14 shrink-0 place-items-center rounded-xl bg-[#173f3a] text-white"
+              className="relative grid h-14 w-full place-items-center rounded-xl bg-[#173f3a] text-white"
               aria-label="فتح السلة"
             >
               <ShoppingBag size={18} />
@@ -508,9 +593,8 @@ export default function Home() {
                   {cartCount}
                 </span>
               )}
-            </button>
+          </button>
           </div>
-        </div>
       </div>
       <audio
         ref={radioRef}
@@ -525,45 +609,105 @@ export default function Home() {
         aria-label="إذاعة القرآن الكريم من مصر"
       />
       {showIOSInstall && <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-[#e2e1d8] bg-[#fffdf9] p-4 text-right shadow-2xl"><button onClick={() => setShowIOSInstall(false)} className="float-left text-xl text-[#72807a]" aria-label="إغلاق">×</button><p className="font-bold text-[#173f3a]">تثبيت التطبيق على iPhone</p><p className="mt-2 text-sm leading-6 text-[#596963]">اضغط زر المشاركة في المتصفح، ثم اختر <strong>إضافة إلى الشاشة الرئيسية</strong>، وبعدها افتح التطبيق من الأيقونة.</p></div>}
+      {pendingDeleteOrder && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a66] px-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-order-title"
+          onClick={() => setPendingDeleteOrder(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-6 text-right shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="delete-order-title" className="font-display text-xl font-bold text-[#173f3a]">
+              حذف الطلب
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[#72807a]">
+              هل تريد حذف هذا الطلب نهائيًا؟ لا يمكن التراجع عن هذا الإجراء.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteOrder(null)}
+                className="h-11 flex-1 rounded-xl border border-[#dedfd8] bg-white text-sm font-bold text-[#72807a]"
+              >
+                إلغاء
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteOrder(pendingDeleteOrder)}
+                className="h-11 flex-1 rounded-xl bg-[#a9584d] text-sm font-bold text-white"
+              >
+                تأكيد الحذف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {radioError && <button onClick={toggleRadio} className="fixed bottom-4 left-4 z-40 rounded-xl bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] shadow-lg">تعذر تشغيل الإذاعة، اضغط للمحاولة</button>}
       {view === "cashier" ? (
         <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section>
-            <div className="mb-6 flex flex-col gap-3 sm:flex-row">
-              <div className="relative flex-1">
-                <Search
-                  className="absolute right-4 top-3.5 text-[#9ca49d]"
-                  size={18}
-                />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="ابحث عن صنف..."
-                  className="h-12 w-full rounded-xl border border-[#dedfd8] bg-white pr-11 pl-4 text-sm outline-none transition focus:border-[#173f3a]"
-                />
+            <div className="mb-6 flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    className="absolute right-4 top-3.5 text-[#9ca49d]"
+                    size={18}
+                  />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="ابحث عن صنف..."
+                    className="h-12 w-full rounded-xl border border-[#dedfd8] bg-white pr-11 pl-4 text-sm outline-none transition focus:border-[#173f3a]"
+                  />
+                </div>
+                <div className="flex shrink-0 items-center rounded-xl border border-[#dedfd8] bg-white p-1">
+                  <button
+                    type="button"
+                    onClick={() => setItemDisplayMode("cards")}
+                    aria-label="عرض الأصناف كبطاقات"
+                    title="عرض البطاقات"
+                    className={`grid size-9 place-items-center rounded-lg transition ${itemDisplayMode === "cards" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
+                  >
+                    <Grid2X2 size={17} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setItemDisplayMode("list")}
+                    aria-label="عرض الأصناف كقائمة"
+                    title="عرض القائمة"
+                    className={`grid size-9 place-items-center rounded-lg transition ${itemDisplayMode === "list" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
+                  >
+                    <List size={18} />
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 overflow-auto pb-1">
+              <div className="flex w-full gap-2 overflow-x-auto pb-1">
                 {categories.map((entry) => (
                   <button
                     key={entry}
                     onClick={() => setCategory(entry)}
-                    className={`whitespace-nowrap rounded-xl px-4 text-sm font-semibold ${category === entry ? "bg-[#173f3a] text-white" : "border border-[#dedfd8] bg-white text-[#72807a]"}`}
+                    className={`flex min-h-11 min-w-[78px] flex-1 items-center justify-center whitespace-nowrap rounded-xl px-3 text-sm font-semibold ${category === entry ? "bg-[#173f3a] text-white" : "border border-[#dedfd8] bg-white text-[#72807a]"}`}
                   >
                     {entry}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+            <div className={`${itemDisplayMode === "cards" ? "grid grid-cols-2 gap-4 md:grid-cols-3" : "grid gap-3"} max-h-[1200px] overflow-y-auto overscroll-contain pr-1`}>
               {filteredItems.map((item) => (
                 <article
                   key={item.id}
-                  className="group rounded-2xl border border-[#e4e3da] bg-[#fffdf9] p-3 transition hover:-translate-y-1 hover:shadow-lg hover:shadow-[#173f3a0d]"
+                  onClick={() => updateQuantity(item.id, 1)}
+                  className={`group relative rounded-2xl border bg-[#fffdf9] transition hover:shadow-lg hover:shadow-[#173f3a0d] ${itemDisplayMode === "cards" ? "p-3 hover:-translate-y-1" : "flex items-center gap-3 p-3"} ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
                 >
                   <div
                     role="img"
                     aria-label={item.name}
-                    className={`grid aspect-[1.3] place-items-center rounded-xl ${item.color} bg-cover bg-center text-6xl transition group-hover:scale-[1.02]`}
+                    className={`grid place-items-center rounded-xl ${item.color} bg-cover bg-center text-5xl transition group-hover:scale-[1.02] ${itemDisplayMode === "cards" ? "aspect-[1.3] text-6xl" : "size-20 shrink-0"}`}
                     style={
                       item.image_url
                         ? { backgroundImage: `url(${item.image_url})` }
@@ -572,26 +716,29 @@ export default function Home() {
                   >
                     {!item.image_url && item.emoji}
                   </div>
-                  <div className="flex items-start justify-between gap-2 px-1 pt-3">
+                  <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "flex min-w-0 flex-1 items-start justify-between gap-2 px-1 py-1"}>
                     <div>
-                      <h2 className="font-semibold">{item.name}</h2>
-                      <p className="mt-1 text-xs text-[#8b948e]">
-                        {item.category}
+                      <h2 className="text-base font-bold text-[#173f3a] sm:text-lg">{item.name}</h2>
+                    </div>
+                    <div className={`flex items-center gap-3 ${itemDisplayMode === "cards" ? "mt-3 justify-between" : "shrink-0"}`}>
+                      <button
+                        onClick={(event) => { event.stopPropagation(); updateQuantity(item.id, 1); }}
+                        aria-label={`إضافة ${item.name} للسلة`}
+                        className="grid size-11 shrink-0 place-items-center rounded-full bg-[#173f3a] text-white shadow-sm transition hover:bg-[#285951]"
+                      >
+                        <Plus size={21} strokeWidth={2.5} />
+                      </button>
+                      <p className="text-left font-display text-lg font-extrabold text-[#c48738]">
+                        {item.price_mode === "market"
+                          ? "حسب السوق"
+                          : item.price_mode === "exchange"
+                            ? "حسب البورصة"
+                            : item.price_mode === "free"
+                              ? "مجاني 100%"
+                              : <>{item.price_mode === "discount" && <span className="ml-2 text-sm text-[#56816c]">خصم {item.discount_percent}%</span>}{getItemUnitPrice(item)}<span className="mr-1 text-xs font-bold text-[#8b948e]">جنيه</span></>}
                       </p>
                     </div>
-                    <p className="font-display text-lg font-bold text-[#c48738]">
-                      {item.price}
-                      <span className="mr-1 text-[10px] font-normal text-[#8b948e]">
-                        ج.م
-                      </span>
-                    </p>
                   </div>
-                  <button
-                    onClick={() => updateQuantity(item.id, 1)}
-                    className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#edf0e9] text-sm font-bold text-[#173f3a] transition hover:bg-[#dfe7df]"
-                  >
-                    <Plus size={16} /> إضافة للسلة
-                  </button>
                 </article>
               ))}
             </div>
@@ -648,23 +795,44 @@ export default function Home() {
                       <p className="truncate text-sm font-semibold">
                         {item.name}
                       </p>
-                      <p className="text-xs text-[#c48738]">
-                        {item.price * quantity} ج.م
+                      <p className="text-sm font-bold text-[#c48738]">
+                        {item.price_mode === "market"
+                          ? "حسب السوق"
+                          : item.price_mode === "exchange"
+                            ? "حسب البورصة"
+                            : item.price_mode === "free"
+                              ? "مجاني 100%"
+                              : item.price_mode === "discount"
+                                ? <>
+                                    <span className="ml-2 text-xs font-semibold text-[#89918c] line-through">
+                                      {item.price * quantity} جنيه
+                                    </span>
+                                    <span>{getItemUnitPrice(item) * quantity} جنيه</span>
+                                    <small className="mr-1 text-xs font-bold text-[#56816c]">
+                                      خصم {item.discount_percent}%
+                                    </small>
+                                  </>
+                                : `${getItemUnitPrice(item) * quantity} جنيه`}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => updateQuantity(item.id, -1)}
-                        className="grid size-7 place-items-center rounded-md bg-white text-[#718079]"
+                        className="grid size-7 shrink-0 place-items-center rounded-md bg-white text-[#718079]"
                       >
                         <Minus size={13} />
                       </button>
-                      <span className="w-3 text-center text-sm font-bold">
-                        {quantity}
-                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={quantity}
+                        onChange={(event) => setQuantity(item.id, event.target.value)}
+                        aria-label={`كمية ${item.name}`}
+                        className="h-8 w-20 shrink-0 rounded-md border border-[#dedfd8] bg-white px-2 text-center text-base font-bold tabular-nums outline-none focus:border-[#173f3a]"
+                      />
                       <button
                         onClick={() => updateQuantity(item.id, 1)}
-                        className="grid size-7 place-items-center rounded-md bg-[#173f3a] text-white"
+                        className="grid size-7 shrink-0 place-items-center rounded-md bg-[#173f3a] text-white"
                       >
                         <Plus size={13} />
                       </button>
@@ -684,9 +852,10 @@ export default function Home() {
             <div className="mb-4 border-t border-[#e7e7df] pt-4">
               <div className="mb-2 flex justify-between text-sm text-[#72807a]">
                 <span>الإجمالي</span>
-                <strong className="font-display text-2xl text-[#173f3a]">
-                  {total} <small className="text-xs font-normal">ج.م</small>
+                <strong className="font-display text-xl text-[#173f3a]">
+                  {hasVariablePrice ? "طلب حجز" : <>{total} <small className="text-xs font-normal">جنيه</small></>}
                 </strong>
+                {hasVariablePrice && <small className="mt-1 block text-xs font-semibold text-[#a66c20]">لا يوجد سعر محدد</small>}
               </div>
             </div>
             <div className="relative mb-3">
@@ -701,6 +870,39 @@ export default function Home() {
                 className="h-11 w-full rounded-xl border border-[#dedfd8] bg-white pr-10 pl-3 text-sm outline-none focus:border-[#173f3a]"
               />
             </div>
+            <select
+              value={governorate}
+              onChange={(event) => {
+                setGovernorate(event.target.value);
+                setDistrict("");
+              }}
+              className="select-with-arrow mb-3 h-11 w-full rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+            >
+              <option value="الفيوم">الفيوم</option>
+              <option value="أخرى">محافظة أخرى</option>
+            </select>
+            {governorate === "الفيوم" ? (
+              <select
+                value={district}
+                onChange={(event) => setDistrict(event.target.value)}
+                className="select-with-arrow mb-3 h-11 w-full rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+              >
+                <option value="">اختر المركز</option>
+                <option value="الفيوم">الفيوم</option>
+                <option value="إبشواي">إبشواي</option>
+                <option value="إطسا">إطسا</option>
+                <option value="سنورس">سنورس</option>
+                <option value="طامية">طامية</option>
+                <option value="يوسف الصديق">يوسف الصديق</option>
+              </select>
+            ) : (
+              <input
+                value={district}
+                onChange={(event) => setDistrict(event.target.value)}
+                placeholder="اكتب اسم محافظتك"
+                className="mb-3 h-11 w-full rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+              />
+            )}
             <button
               onClick={submitOrder}
               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#c48738] font-bold text-white transition hover:bg-[#ad722c]"
@@ -785,7 +987,7 @@ export default function Home() {
                     key={status}
                     className={`rounded-xl px-3 py-2 text-xs font-semibold ${status === "قيد التنفيذ" ? "bg-[#fff0d4] text-[#a66c20]" : status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#f0ece8] text-[#7d6559]"}`}
                   >
-                    <span className="ml-1">{statusCounts[status]}</span>{" "}
+                    <span className="ml-1 text-base font-extrabold tabular-nums">{statusCounts[status]}</span>{" "}
                     {status}
                   </div>
                 ))}
@@ -798,47 +1000,79 @@ export default function Home() {
               </button>
             </div>
           </div>
-          {userRole === "admin" && (
-            <nav className="mb-6 flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
+          <div className="mb-6 flex flex-wrap items-center gap-3">
+            <nav className="flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
               <button
                 onClick={() => setAdminTab("orders")}
                 className={`rounded-lg px-5 py-2.5 transition ${adminTab === "orders" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
               >
                 الطلبات
               </button>
-              <button
-                onClick={() => setAdminTab("menu")}
-                className={`rounded-lg px-5 py-2.5 transition ${adminTab === "menu" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
-              >
-                إدارة القائمة
-              </button>
-              <button
-                onClick={() => setAdminTab("settings")}
-                className={`rounded-lg px-5 py-2.5 transition ${adminTab === "settings" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
-              >
-                إعدادات الصفحة
-              </button>
+              {userRole === "admin" && (
+                <>
+                  <button
+                    onClick={() => setAdminTab("menu")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "menu" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    إدارة القائمة
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("settings")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "settings" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    إعدادات الصفحة
+                  </button>
+                </>
+              )}
             </nav>
-          )}
+            <div className="relative w-full sm:w-64">
+              <Search
+                className="absolute right-3 top-3 text-[#9ca49d]"
+                size={17}
+              />
+              <input
+                value={orderSearch}
+                onChange={(event) => setOrderSearch(event.target.value)}
+                placeholder="ابحث برقم الطلب أو الهاتف"
+                aria-label="البحث في الطلبات"
+                className="h-11 w-full rounded-xl border border-[#dedfd8] bg-white pr-10 pl-3 text-sm outline-none transition focus:border-[#173f3a]"
+              />
+            </div>
+          </div>
           {userRole === "staff" ? (
             <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
+              <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
+                <span>الطلب</span>
+                <span>رقم الهاتف</span>
+                <span>الأصناف</span>
+                <span>الإجمالي</span>
+                <span>الحالة</span>
+              </div>
               {filteredOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="flex items-center justify-between gap-4 border-b border-[#ededE7] px-5 py-5 last:border-0"
+                  className="grid gap-3 border-b border-[#ededE7] px-4 py-5 last:border-0 sm:grid-cols-[100px_160px_1fr_100px_130px] sm:items-center sm:gap-4 sm:px-5"
                 >
-                  <div>
-                    <p className="font-display font-bold text-[#173f3a]">
-                      {order.id}{" "}
-                      <span className="mr-3 text-sm font-normal text-[#596963]">
-                        {order.phone}
-                      </span>
-                    </p>
-                    <p className="mt-1 text-sm text-[#596963]">{order.items}</p>
-                    <small className="text-xs text-[#a1aaa3]">
+                  <span className="font-display text-lg font-extrabold tabular-nums text-[#173f3a]">
+                    {order.id}
+                  </span>
+                  <span className="text-lg font-bold tabular-nums text-[#596963]">
+                    {order.phone}
+                  </span>
+                  <span className="text-base font-semibold leading-7 text-[#596963]">
+                    {order.items}
+                    <small className="mr-2 block text-sm font-bold text-[#56816c]">
+                      {order.governorate}
+                      {order.district ? ` - ${order.district}` : ""}
+                    </small>
+                    <small className="mr-2 block text-xs font-semibold text-[#72807a]">
                       {formatOrderDate(order.created_at)}
                     </small>
-                  </div>
+                    <small className="mr-2 block text-xs font-bold text-[#c48738]">{formatRelativeTime(order.status_changed_at || order.created_at, currentTime)}</small>
+                  </span>
+                  <span className="font-display text-lg font-extrabold tabular-nums text-[#c48738]">
+                    {order.total} جنيه
+                  </span>
                   <select
                     value={order.status}
                     onChange={(event) =>
@@ -847,7 +1081,7 @@ export default function Home() {
                         event.target.value as OrderStatus,
                       )
                     }
-                    className="rounded-lg border-0 bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] outline-none"
+                    className="select-with-arrow min-w-28 rounded-lg border-0 bg-[#fff0d4] px-3 py-3 text-sm font-bold text-[#a66c20] outline-none"
                   >
                     {orderStatuses.map((status) => (
                       <option key={status} value={status}>
@@ -886,7 +1120,7 @@ export default function Home() {
                   <select
                     value={orderCategory}
                     onChange={(event) => setOrderCategory(event.target.value)}
-                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
                   >
                     <option value="الكل">كل الفئات</option>
                     {categoryOptions.map((option) => (
@@ -898,7 +1132,7 @@ export default function Home() {
                   <select
                     value={orderItem}
                     onChange={(event) => setOrderItem(event.target.value)}
-                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
                   >
                     <option value="الكل">كل الأصناف</option>
                     {orderItems.map((option) => (
@@ -910,7 +1144,7 @@ export default function Home() {
                   <select
                     value={orderPeriod}
                     onChange={(event) => setOrderPeriod(event.target.value)}
-                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
                   >
                     <option value="all">كل الفترات</option>
                     <option value="today">اليوم</option>
@@ -922,7 +1156,7 @@ export default function Home() {
                   <select
                     value={orderStatus}
                     onChange={(event) => setOrderStatus(event.target.value)}
-                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
                   >
                     <option value="الكل">كل الحالات</option>
                     {orderStatuses.map((status) => (
@@ -934,32 +1168,38 @@ export default function Home() {
                 </div>
               </div>
               <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
-                <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
+                <div className="hidden grid-cols-[100px_160px_1fr_100px_130px_70px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
                   <span>الطلب</span>
                   <span>رقم الهاتف</span>
                   <span>الأصناف</span>
                   <span>الإجمالي</span>
                   <span>الحالة</span>
+                  <span>إجراء</span>
                 </div>
                 {filteredOrders.map((order) => (
                   <div
                     key={order.id}
-                    className="grid gap-3 border-b border-[#ededE7] px-5 py-5 last:border-0 sm:grid-cols-[100px_160px_1fr_100px_130px] sm:items-center sm:gap-4"
+                    className="grid gap-3 border-b border-[#ededE7] px-4 py-5 last:border-0 sm:grid-cols-[100px_160px_1fr_100px_130px_70px] sm:items-center sm:gap-4 sm:px-5"
                   >
-                    <span className="font-display font-bold text-[#173f3a]">
+                    <span className="font-display text-lg font-extrabold tabular-nums text-[#173f3a]">
                       {order.id}
                     </span>
-                    <span className="text-sm text-[#596963]">
+                    <span className="text-lg font-bold tabular-nums text-[#596963]">
                       {order.phone}
                     </span>
-                    <span className="text-sm text-[#596963]">
+                    <span className="text-base font-semibold leading-7 text-[#596963]">
                       {order.items}
-                      <small className="mr-2 block text-xs text-[#a1aaa3]">
+                      <small className="mr-2 block text-sm font-bold text-[#56816c]">
+                        {order.governorate}
+                        {order.district ? ` - ${order.district}` : ""}
+                      </small>
+                      <small className="mr-2 block text-xs font-semibold text-[#72807a]">
                         {formatOrderDate(order.created_at)}
                       </small>
+                      <small className="mr-2 block text-xs font-bold text-[#c48738]">{formatRelativeTime(order.status_changed_at || order.created_at, currentTime)}</small>
                     </span>
-                    <span className="font-display font-bold text-[#c48738]">
-                      {order.total} ج.م
+                    <span className="font-display text-lg font-extrabold tabular-nums text-[#c48738]">
+                      {order.total} جنيه
                     </span>
                     <select
                       value={order.status}
@@ -969,7 +1209,7 @@ export default function Home() {
                           event.target.value as OrderStatus,
                         )
                       }
-                      className={`w-fit rounded-lg border-0 px-3 py-2 text-xs font-bold outline-none ${order.status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#fff0d4] text-[#a66c20]"}`}
+                      className={`select-with-arrow w-fit rounded-lg border-0 px-3 py-2 text-xs font-bold outline-none ${order.status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#fff0d4] text-[#a66c20]"}`}
                     >
                       {orderStatuses.map((status) => (
                         <option key={status} value={status}>
@@ -977,6 +1217,15 @@ export default function Home() {
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteOrder(order.id)}
+                      aria-label={`حذف الطلب ${order.id}`}
+                      title="حذف الطلب"
+                      className="grid size-9 place-items-center rounded-lg bg-[#f9e5e1] text-[#a9584d] transition hover:bg-[#f2d2cc]"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -1009,6 +1258,8 @@ function ItemManager({
     name: "",
     category: categories[0] || "",
     price: "",
+    priceMode: "fixed" as "fixed" | "market" | "exchange" | "free" | "discount",
+    discountPercent: "",
     imageUrl: "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -1043,13 +1294,19 @@ function ItemManager({
       name: draft.name.trim(),
       category: draft.category.trim(),
       price: Number(draft.price),
+      price_mode: draft.priceMode,
+      discount_percent: Number(draft.discountPercent),
       emoji: "☕",
     };
     if (
       !payload.name ||
       !payload.category ||
-      !Number.isFinite(payload.price) ||
-      payload.price < 0
+      (payload.price_mode === "fixed" &&
+        (!Number.isFinite(payload.price) || payload.price < 0)) ||
+      (payload.price_mode === "discount" &&
+        (!Number.isFinite(payload.price) || payload.price < 0 ||
+          !Number.isFinite(payload.discount_percent) ||
+          payload.discount_percent < 0 || payload.discount_percent > 100))
     )
       return setMessage("راجع اسم الصنف والسعر");
     const formData = new FormData();
@@ -1087,6 +1344,8 @@ function ItemManager({
       name: "",
       category: categories[0] || "",
       price: "",
+      priceMode: "fixed",
+      discountPercent: "",
       imageUrl: "",
     });
     setMessage("تم حفظ الصنف");
@@ -1098,6 +1357,8 @@ function ItemManager({
       name: item.name,
       category: item.category,
       price: String(item.price),
+      priceMode: item.price_mode || "fixed",
+      discountPercent: String(item.discount_percent || ""),
       imageUrl: item.image_url || "",
     });
     setImageFile(null);
@@ -1154,14 +1415,14 @@ function ItemManager({
       </div>
       <form
         onSubmit={saveItem}
-        className="mb-5 grid gap-2 rounded-xl bg-[#f6f6f1] p-3 sm:grid-cols-[1.5fr_1fr_100px_auto_auto]"
+        className="mb-5 grid gap-2 rounded-xl bg-[#f6f6f1] p-3 sm:grid-cols-[1.5fr_1fr_1fr_100px_auto_auto]"
       >
         <input
           required
           value={draft.name}
           onChange={(event) => setDraft({ ...draft, name: event.target.value })}
           placeholder="اسم الصنف"
-          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                    className="select-with-arrow h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
         />
         <select
           value={draft.category}
@@ -1176,8 +1437,24 @@ function ItemManager({
             </option>
           ))}
         </select>
+        <select
+          value={draft.priceMode}
+          onChange={(event) =>
+            setDraft({
+              ...draft,
+              priceMode: event.target.value as "fixed" | "market" | "exchange",
+            })
+          }
+          className="select-with-arrow h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+        >
+          <option value="fixed">سعر ثابت</option>
+          <option value="market">حسب السوق</option>
+          <option value="exchange">حسب البورصة</option>
+          <option value="free">مجاني 100%</option>
+          <option value="discount">عليه خصم</option>
+        </select>
         <input
-          required
+          required={draft.priceMode === "fixed"}
           type="number"
           min="0"
           value={draft.price}
@@ -1185,8 +1462,23 @@ function ItemManager({
             setDraft({ ...draft, price: event.target.value })
           }
           placeholder="السعر"
-          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+          disabled={draft.priceMode !== "fixed" && draft.priceMode !== "discount"}
+          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a] disabled:cursor-not-allowed disabled:bg-[#eef0ea]"
         />
+        {draft.priceMode === "discount" && (
+          <input
+            required
+            type="number"
+            min="0"
+            max="100"
+            value={draft.discountPercent}
+            onChange={(event) =>
+              setDraft({ ...draft, discountPercent: event.target.value })
+            }
+            placeholder="نسبة الخصم %"
+            className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+          />
+        )}
         <label className="flex h-10 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[#c8cec7] bg-white px-3 text-xs font-bold text-[#56816c]">
           {imageFile ? "تم اختيار الصورة" : "رفع صورة"}
           <input
@@ -1277,7 +1569,16 @@ function ItemManager({
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold">{item.name}</p>
               <p className="text-xs text-[#89918c]">
-                {item.category} <span className="mx-1">•</span> {item.price} ج.م
+                {item.category} <span className="mx-1">•</span>
+                {item.price_mode === "market"
+                  ? "حسب السوق"
+                  : item.price_mode === "exchange"
+                    ? "حسب البورصة"
+                    : item.price_mode === "free"
+                      ? "مجاني 100%"
+                      : item.price_mode === "discount"
+                        ? `خصم ${item.discount_percent}% - ${item.price} جنيه`
+                        : `${item.price} جنيه`}
               </p>
             </div>
             <button

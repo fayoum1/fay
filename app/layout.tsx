@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   title: "الفيوم للأعلاف والدواجن | إدارة الطلبات",
   description: "نظام إدارة الطلبات والأصناف للفيوم للأعلاف والدواجن",
   manifest: "/manifest.webmanifest",
+  icons: { apple: "/apple-icon", icon: "/icon" },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "الفيوم للأعلاف" },
 };
 

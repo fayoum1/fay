@@ -22,7 +22,20 @@ export async function PATCH(request: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const database = createClient(url, key, { auth: { persistSession: false } });
-  const { error } = await database.from("orders").update({ status }).eq("id", id);
+  const { error } = await database.from("orders").update({ status, status_changed_at: new Date().toISOString() }).eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json({ success: true });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (getAdminRole(request) !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id } = await request.json().catch(() => ({ id: null }));
+  if (!Number.isInteger(id)) return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  const database = createClient(url, key, { auth: { persistSession: false } });
+  const { error } = await database.from("orders").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ success: true });
 }

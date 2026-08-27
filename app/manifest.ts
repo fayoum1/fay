@@ -6,7 +6,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   let name = "الفيوم للأعلاف والدواجن";
-  let logo = "/icon.svg";
+  let logo = "/icon";
 
   if (url && key) {
     try {
