@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest) {
   const database = client();
   if (!database) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const form = await request.formData();
-  const values = { name: String(form.get("name") || "رَشفة"), tagline: String(form.get("tagline") || "نظام الحجوزات"), branch: String(form.get("branch") || "الفرع الرئيسي"), phone: String(form.get("phone") || ""), secondary_phone: String(form.get("secondary_phone") || "") };
+  const values = { name: String(form.get("name") || "الفيوم للأعلاف والدواجن"), tagline: String(form.get("tagline") || "نظام الطلبات"), branch: String(form.get("branch") || "الفرع الرئيسي"), phone: String(form.get("phone") || ""), secondary_phone: String(form.get("secondary_phone") || "") };
   const image = form.get("logo");
   let logo_url = String(form.get("logo_url") || "") || undefined;
   if (image instanceof File) {

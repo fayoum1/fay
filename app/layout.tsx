@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "رَشفة | إدارة الحجوزات",
-  description: "نظام كاشير وحجوزات بسيط للمقاهي",
+  title: "الفيوم للأعلاف والدواجن | إدارة الطلبات",
+  description: "نظام إدارة الطلبات والأصناف للفيوم للأعلاف والدواجن",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -22,8 +22,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="ar"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body suppressHydrationWarning className="min-h-full flex flex-col">
+        {children}
+      </body>
     </html>
   );
 }

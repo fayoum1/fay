@@ -13,6 +13,7 @@ import {
   Search,
   ShoppingBag,
   Smartphone,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -32,6 +33,7 @@ type Order = {
   total: number;
   status: "قيد التنفيذ" | "تم";
   created_at: string;
+  order_items?: { id: number; name: string; quantity: number; category?: string }[];
 };
 type SiteSettings = {
   id?: number;
@@ -44,82 +46,28 @@ type SiteSettings = {
 };
 
 const defaultSettings: SiteSettings = {
-  name: "رَشفة",
+  name: "الفيوم للأعلاف والدواجن",
   tagline: "نظام الحجوزات",
   branch: "الفرع الرئيسي",
   phone: "",
   secondary_phone: "",
 };
+const defaultCategories: string[] = [];
 
-const items: Item[] = [
-  {
-    id: 1,
-    name: "لاتيه ساخن",
-    category: "قهوة",
-    price: 55,
-    emoji: "☕",
-    color: "bg-[#f5dfc1]",
-  },
-  {
-    id: 2,
-    name: "كابتشينو",
-    category: "قهوة",
-    price: 60,
-    emoji: "🥛",
-    color: "bg-[#e9d3b1]",
-  },
-  {
-    id: 3,
-    name: "كولد برو",
-    category: "بارد",
-    price: 65,
-    emoji: "🧊",
-    color: "bg-[#c8e3e0]",
-  },
-  {
-    id: 4,
-    name: "شاي أخضر",
-    category: "ساخن",
-    price: 35,
-    emoji: "🍵",
-    color: "bg-[#dce7c9]",
-  },
-  {
-    id: 5,
-    name: "كرواسون زبدة",
-    category: "مخبوزات",
-    price: 45,
-    emoji: "🥐",
-    color: "bg-[#f3cf8f]",
-  },
-  {
-    id: 6,
-    name: "تشيز كيك",
-    category: "حلويات",
-    price: 75,
-    emoji: "🍰",
-    color: "bg-[#f0c8c7]",
-  },
-];
+function validImageUrl(value?: string) {
+  if (!value || value === "null" || value === "undefined") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-const demoOrders: Order[] = [
-  {
-    id: "#1042",
-    phone: "010 2345 6789",
-    items: "لاتيه ساخن × 2، كرواسون زبدة × 1",
-    total: 155,
-    status: "قيد التنفيذ",
-    created_at: "منذ 3 دقائق",
-  },
-  {
-    id: "#1041",
-    phone: "011 8765 4321",
-    items: "كولد برو × 1، تشيز كيك × 1",
-    total: 140,
-    status: "تم",
-    created_at: "منذ 12 دقيقة",
-  },
-];
+function formatOrderDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ar-EG");
+}
 
 export default function Home() {
   const [view, setView] = useState<"cashier" | "admin">("cashier");
@@ -127,16 +75,20 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("الكل");
   const [cart, setCart] = useState<Record<number, number>>({});
-  const [orders, setOrders] = useState(demoOrders);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState("");
   const [adminPin, setAdminPin] = useState("");
   const [adminError, setAdminError] = useState("");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
-  const [menuItems, setMenuItems] = useState(items);
+  const [menuItems, setMenuItems] = useState<Item[]>([]);
   const [adminTab, setAdminTab] = useState<"orders" | "menu" | "settings">(
     "orders",
   );
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
+  const [categoryOptions, setCategoryOptions] = useState(defaultCategories);
+  const [orderCategory, setOrderCategory] = useState("الكل");
+  const [orderItem, setOrderItem] = useState("الكل");
+  const [orderPeriod, setOrderPeriod] = useState("all");
 
   const filteredItems = menuItems.filter(
     (item) =>
@@ -158,16 +110,44 @@ export default function Home() {
     "الكل",
     ...new Set(menuItems.map((item) => item.category)),
   ];
+  const orderItems = [...new Set(orders.flatMap((order) => order.order_items?.map((item) => item.name) || []))];
+  const filteredOrders = orders.filter((order) => {
+    const date = new Date(order.created_at);
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (orderPeriod === "today" && date < start) return false;
+    if (orderPeriod === "yesterday") { const yesterday = new Date(start); yesterday.setDate(start.getDate() - 1); if (date < yesterday || date >= start) return false; }
+    if (orderPeriod === "week") { const weekStart = new Date(start); weekStart.setDate(start.getDate() - start.getDay()); if (date < weekStart) return false; }
+    if (orderPeriod === "month" && date < new Date(now.getFullYear(), now.getMonth(), 1)) return false;
+    if (orderPeriod === "90days" && date < new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)) return false;
+    if (orderCategory !== "الكل" && !order.order_items?.some((item) => item.category === orderCategory || menuItems.find((menuItem) => menuItem.id === item.id)?.category === orderCategory)) return false;
+    if (orderItem !== "الكل" && !order.order_items?.some((item) => item.name === orderItem)) return false;
+    return true;
+  });
 
   useEffect(() => {
     fetch("/api/admin/session")
       .then((response) => setAdminAuthenticated(response.ok))
       .catch(() => setAdminAuthenticated(false));
+    fetch("/api/items")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (Array.isArray(data) && data.length) setMenuItems(data.map((item) => ({ ...item, color: item.color || "bg-[#e9d3b1]" })));
+      })
+      .catch(() => undefined);
+    fetch("/api/admin/orders")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => { if (Array.isArray(data)) setOrders(data); })
+      .catch(() => undefined);
     fetch("/api/settings")
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (data) setSettings({ ...defaultSettings, ...data });
       })
+      .catch(() => undefined);
+    fetch("/api/categories")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => { if (Array.isArray(data) && data.length) setCategoryOptions(data.map((category) => category.name)); })
       .catch(() => undefined);
   }, []);
 
@@ -190,6 +170,7 @@ export default function Home() {
             items: cartItems.map(({ item, quantity }) => ({
               id: item.id,
               name: item.name,
+              category: item.category,
               quantity,
               price: item.price,
             })),
@@ -197,7 +178,7 @@ export default function Home() {
             status: "قيد التنفيذ",
           })
       : { error: null };
-    if (error) return setNotice("تعذر حفظ الطلب، راجع إعدادات Supabase");
+    if (error) return setNotice("تعذر حفظ الطلب، راجع اتصال Supabase");
     setOrders((current) => [
       {
         id: `#${1043 + current.length}`,
@@ -205,7 +186,7 @@ export default function Home() {
         items: orderItems,
         total,
         status: "قيد التنفيذ",
-        created_at: "الآن",
+        created_at: new Date().toISOString(),
       },
       ...current,
     ]);
@@ -259,9 +240,9 @@ export default function Home() {
         <div className="mx-auto flex max-w-[1440px] items-center justify-between px-5 py-4 lg:px-10">
           <div className="flex items-center gap-3">
             <div className="grid size-10 place-items-center overflow-hidden rounded-xl bg-[#173f3a] text-[#f4c95d]">
-              {settings.logo_url ? (
+              {validImageUrl(settings.logo_url) ? (
                 <Image
-                  src={settings.logo_url}
+                  src={validImageUrl(settings.logo_url)!}
                   alt=""
                   className="size-full object-cover"
                   width={40}
@@ -591,8 +572,10 @@ export default function Home() {
           {adminTab === "settings" ? (
             <SettingsManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "menu" ? (
-            <ItemManager menuItems={menuItems} setMenuItems={setMenuItems} />
+            <ItemManager menuItems={menuItems} setMenuItems={setMenuItems} categories={categoryOptions} setCategories={setCategoryOptions} onSessionExpired={() => { setAdminAuthenticated(false); setView("admin"); }} />
           ) : (
+            <>
+            <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4"><div className="mb-3 flex items-center justify-between"><h2 className="font-display text-lg font-bold text-[#173f3a]">فلترة الطلبات</h2><span className="text-xs text-[#89918c]">{filteredOrders.length} نتيجة</span></div><div className="grid gap-3 sm:grid-cols-3"><select value={orderCategory} onChange={(event) => setOrderCategory(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الفئات</option>{categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderItem} onChange={(event) => setOrderItem(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الأصناف</option>{orderItems.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderPeriod} onChange={(event) => setOrderPeriod(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="90days">آخر 90 يوم</option></select></div></div>
             <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
               <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
                 <span>الطلب</span>
@@ -601,7 +584,7 @@ export default function Home() {
                 <span>الإجمالي</span>
                 <span>الحالة</span>
               </div>
-              {orders.map((order) => (
+              {filteredOrders.map((order) => (
                 <div
                   key={order.id}
                   className="grid gap-3 border-b border-[#ededE7] px-5 py-5 last:border-0 sm:grid-cols-[100px_160px_1fr_100px_130px] sm:items-center sm:gap-4"
@@ -613,7 +596,7 @@ export default function Home() {
                   <span className="text-sm text-[#596963]">
                     {order.items}
                     <small className="mr-2 block text-xs text-[#a1aaa3]">
-                      {order.created_at}
+                      {formatOrderDate(order.created_at)}
                     </small>
                   </span>
                   <span className="font-display font-bold text-[#c48738]">
@@ -633,12 +616,12 @@ export default function Home() {
                   </button>
                 </div>
               ))}
-            </div>
+            </div></>
           )}
         </section>
       )}
       <footer className="mx-auto max-w-[1440px] px-5 pb-8 pt-2 text-xs text-[#a0a8a1] lg:px-10">
-        رَشفة <span className="mx-2">•</span> إدارة الحجوزات ببساطة
+        {settings.name} <span className="mx-2">•</span> إدارة الحجوزات ببساطة
       </footer>
     </main>
   );
@@ -647,30 +630,44 @@ export default function Home() {
 function ItemManager({
   menuItems,
   setMenuItems,
+  categories,
+  setCategories,
+  onSessionExpired,
 }: {
   menuItems: Item[];
   setMenuItems: (items: Item[]) => void;
+  categories: string[];
+  setCategories: (categories: string[]) => void;
+  onSessionExpired: () => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState({
-    name: "",
-    category: "عام",
-    price: "",
-    emoji: "☕",
-    imageUrl: "",
-  });
+  const [draft, setDraft] = useState({ name: "", category: categories[0] || "", price: "", imageUrl: "" });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
+  const [newCategory, setNewCategory] = useState("");
+
+  const addCategory = async () => {
+    const name = newCategory.trim();
+    if (!name || categories.includes(name)) return setMessage("اكتب فئة جديدة غير مكررة");
+    const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 401) { onSessionExpired(); return setMessage("انتهت جلسة الأدمن، سجل الدخول مرة أخرى"); }
+    if (!response.ok) return setMessage(result.error || "تعذر حفظ الفئة");
+    if (!categories.includes(result.name || name)) setCategories([...categories, result.name || name]);
+    setDraft((current) => ({ ...current, category: result.name || name }));
+    setNewCategory("");
+    setMessage("تمت إضافة الفئة، اخترها الآن للصنف");
+  };
 
   const saveItem = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const payload = {
       name: draft.name.trim(),
-      category: draft.category.trim() || "عام",
+      category: draft.category.trim(),
       price: Number(draft.price),
-      emoji: draft.emoji || "☕",
+      emoji: "☕",
     };
-    if (!payload.name || !Number.isFinite(payload.price) || payload.price < 0)
+    if (!payload.name || !payload.category || !Number.isFinite(payload.price) || payload.price < 0)
       return setMessage("راجع اسم الصنف والسعر");
     const formData = new FormData();
     Object.entries(editingId ? { id: editingId, ...payload } : payload).forEach(
@@ -681,9 +678,10 @@ function ItemManager({
       method: editingId ? "PATCH" : "POST",
       body: formData,
     });
-    if (!response.ok && response.status !== 503)
+    if (response.status === 401) { onSessionExpired(); return setMessage("انتهت جلسة الأدمن، سجل الدخول مرة أخرى"); }
+    if (!response.ok)
       return setMessage("تعذر حفظ الصنف");
-    const savedResponse = response.ok ? await response.json() : null;
+    const savedResponse = await response.json();
     const saved = {
       id: savedResponse?.id || editingId || Date.now(),
       ...payload,
@@ -702,9 +700,8 @@ function ItemManager({
     setImageFile(null);
     setDraft({
       name: "",
-      category: "عام",
+      category: categories[0] || "",
       price: "",
-      emoji: "☕",
       imageUrl: "",
     });
     setMessage("تم حفظ الصنف");
@@ -716,7 +713,6 @@ function ItemManager({
       name: item.name,
       category: item.category,
       price: String(item.price),
-      emoji: item.emoji,
       imageUrl: item.image_url || "",
     });
     setImageFile(null);
@@ -742,9 +738,10 @@ function ItemManager({
         </div>
         <span className="text-xs text-[#89918c]">{menuItems.length} أصناف</span>
       </div>
+      <div className="mb-5 rounded-xl border border-[#e9e9e2] bg-[#fbfbf8] p-4"><div className="mb-3"><p className="text-sm font-bold text-[#173f3a]">الفئات المسجلة</p><p className="mt-1 text-xs text-[#89918c]">أضف الفئة واحفظها هنا أولًا، ثم اخترها عند تسجيل الصنف.</p></div><div className="flex gap-2"><input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addCategory(); } }} placeholder="مثال: مشروبات ساخنة" className="h-10 flex-1 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]" /><button type="button" onClick={addCategory} className="h-10 rounded-lg bg-[#c48738] px-4 text-sm font-bold text-white">حفظ الفئة</button></div></div>
       <form
         onSubmit={saveItem}
-        className="mb-5 grid gap-2 rounded-xl bg-[#f6f6f1] p-3 sm:grid-cols-[1.5fr_1fr_100px_70px_auto]"
+        className="mb-5 grid gap-2 rounded-xl bg-[#f6f6f1] p-3 sm:grid-cols-[1.5fr_1fr_100px_auto_auto]"
       >
         <input
           required
@@ -753,14 +750,7 @@ function ItemManager({
           placeholder="اسم الصنف"
           className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
         />
-        <input
-          value={draft.category}
-          onChange={(event) =>
-            setDraft({ ...draft, category: event.target.value })
-          }
-          placeholder="التصنيف"
-          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
-        />
+        <select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]">{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select>
         <input
           required
           type="number"
@@ -771,14 +761,6 @@ function ItemManager({
           }
           placeholder="السعر"
           className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
-        />
-        <input
-          value={draft.emoji}
-          onChange={(event) =>
-            setDraft({ ...draft, emoji: event.target.value })
-          }
-          aria-label="رمز الصنف"
-          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-center text-xl outline-none focus:border-[#173f3a]"
         />
         <label className="flex h-10 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[#c8cec7] bg-white px-3 text-xs font-bold text-[#56816c]">
           {imageFile ? "تم اختيار الصورة" : "رفع صورة"}
@@ -794,7 +776,7 @@ function ItemManager({
             }}
           />
         </label>
-        <button className="h-10 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white">
+        <button disabled={!categories.length} className="h-10 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">
           {editingId ? "حفظ التعديل" : "إضافة صنف"}
         </button>
       </form>
@@ -810,6 +792,8 @@ function ItemManager({
       {message && (
         <p className="mb-3 text-xs font-semibold text-[#56816c]">{message}</p>
       )}
+      {!categories.length && <p className="mb-3 rounded-lg bg-[#fff0d4] p-3 text-xs font-semibold text-[#a66c20]">أضف فئة أولًا حتى تتمكن من تسجيل صنف.</p>}
+      {!!categories.length && <div className="mb-3 flex flex-wrap gap-2">{categories.map((category) => <span key={category} className="flex items-center gap-1 rounded-lg bg-[#eef0ea] px-3 py-1.5 text-xs font-semibold text-[#56816c]">{category}<button type="button" onClick={async () => { const response = await fetch("/api/categories", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: category }) }); if (!response.ok) return setMessage("لا يمكن حذف فئة مرتبطة بصنف"); setCategories(categories.filter((entry) => entry !== category)); if (draft.category === category) setDraft({ ...draft, category: "" }); }} aria-label={`حذف فئة ${category}`} className="text-[#a16a4a]"><Trash2 size={12} /></button></span>)}</div>}
       <div className="grid gap-2">
         {menuItems.map((item) => (
           <div
@@ -872,3 +856,4 @@ function SettingsManager({ settings, setSettings }: { settings: SiteSettings; se
 
   return <section className="max-w-3xl rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5"><div className="mb-6"><p className="text-sm font-semibold text-[#c48738]">ما يراه العميل</p><h2 className="font-display text-2xl font-bold text-[#173f3a]">إعدادات الصفحة</h2><p className="mt-1 text-sm text-[#72807a]">غيّر اسم المكان والهوية ووسائل التواصل الظاهرة في الواجهة.</p></div><form onSubmit={saveSettings} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold">اسم الصفحة<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">الوصف المختصر<input value={draft.tagline} onChange={(event) => setDraft({ ...draft, tagline: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">اسم الفرع<input value={draft.branch} onChange={(event) => setDraft({ ...draft, branch: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">رقم الهاتف الأساسي<input value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} placeholder="01xxxxxxxxx" className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">رقم هاتف إضافي<input value={draft.secondary_phone} onChange={(event) => setDraft({ ...draft, secondary_phone: event.target.value })} placeholder="01xxxxxxxxx" className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">اللوجو<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0] || null; setLogoFile(file); if (file) setDraft({ ...draft, logo_url: URL.createObjectURL(file) }); }} className="mt-2 block w-full rounded-xl border border-dashed border-[#c8cec7] bg-[#f6f6f1] p-2 text-xs font-normal" /></label>{draft.logo_url && <div className="flex items-center gap-3 text-sm text-[#72807a] sm:col-span-2"><span className="size-16 rounded-xl bg-cover bg-center" style={{ backgroundImage: `url(${draft.logo_url})` }} /> معاينة اللوجو</div>}<button className="h-12 rounded-xl bg-[#173f3a] font-bold text-white sm:col-span-2">حفظ إعدادات الصفحة</button></form>{message && <p className="mt-4 text-center text-sm font-semibold text-[#56816c]">{message}</p>}</section>;
 }
+
