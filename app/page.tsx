@@ -116,7 +116,10 @@ export default function Home() {
   const cartRef = useRef<HTMLElement>(null);
   const radioRef = useRef<HTMLAudioElement>(null);
   const [radioPlaying, setRadioPlaying] = useState(false);
+  const [radioError, setRadioError] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIOSInstall, setShowIOSInstall] = useState(false);
 
   const filteredItems = menuItems.filter(
     (item) =>
@@ -199,6 +202,8 @@ export default function Home() {
   );
 
   useEffect(() => {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    window.setTimeout(() => setIsIOS(ios), 0);
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     const handleInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
     window.addEventListener("beforeinstallprompt", handleInstallPrompt);
@@ -220,6 +225,8 @@ export default function Home() {
         .then(() => setRadioPlaying(true))
         .catch(() => setRadioPlaying(false));
     }
+    const startAfterGesture = () => { const currentRadio = radioRef.current; if (currentRadio && currentRadio.paused) currentRadio.play().then(() => setRadioPlaying(true)).catch(() => undefined); window.removeEventListener("pointerdown", startAfterGesture); };
+    window.addEventListener("pointerdown", startAfterGesture, { once: true });
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const tomorrowStart = new Date(todayStart);
@@ -282,12 +289,18 @@ export default function Home() {
       return;
     }
     try {
+      setRadioError(false);
       await radio.play();
       setRadioPlaying(true);
     } catch {
       setRadioPlaying(false);
+      setRadioError(true);
     }
   };
+
+  const handleRadioError = () => { setRadioPlaying(false); setRadioError(true); };
+
+  const installOnIOS = () => setShowIOSInstall(true);
 
   const updateQuantity = (id: number, delta: number) =>
     setCart((current) => ({
@@ -437,6 +450,7 @@ export default function Home() {
                 </span>
               )}
             </button>
+            {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-14 shrink-0 place-items-center rounded-xl border border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
           </div>
           <div className="hidden items-center gap-2 text-xs text-[#72807a] sm:flex">
             <span className="size-2 rounded-full bg-[#5aa67d]" />{" "}
@@ -451,7 +465,7 @@ export default function Home() {
           >
             <Radio size={19} />
           </button>
-          {installPrompt && <button onClick={installApp} className="flex h-12 items-center gap-2 rounded-xl bg-[#c48738] px-3 text-xs font-bold text-white" aria-label="تثبيت التطبيق"><Download size={16} /> تثبيت التطبيق</button>}
+          {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="flex h-12 items-center gap-2 rounded-xl bg-[#c48738] px-3 text-xs font-bold text-white" aria-label="تثبيت التطبيق"><Download size={16} /> تثبيت التطبيق</button>}
         </div>
       </header>
       <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-5 py-3 lg:hidden">
@@ -506,8 +520,11 @@ export default function Home() {
         preload="none"
         onPlay={() => setRadioPlaying(true)}
         onPause={() => setRadioPlaying(false)}
+        onError={handleRadioError}
         aria-label="إذاعة القرآن الكريم من مصر"
       />
+      {showIOSInstall && <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-[#e2e1d8] bg-[#fffdf9] p-4 text-right shadow-2xl"><button onClick={() => setShowIOSInstall(false)} className="float-left text-xl text-[#72807a]" aria-label="إغلاق">×</button><p className="font-bold text-[#173f3a]">تثبيت التطبيق على iPhone</p><p className="mt-2 text-sm leading-6 text-[#596963]">اضغط زر المشاركة في المتصفح، ثم اختر <strong>إضافة إلى الشاشة الرئيسية</strong>، وبعدها افتح التطبيق من الأيقونة.</p></div>}
+      {radioError && <button onClick={toggleRadio} className="fixed bottom-4 left-4 z-40 rounded-xl bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] shadow-lg">تعذر تشغيل الإذاعة، اضغط للمحاولة</button>}
       {view === "cashier" ? (
         <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section>
