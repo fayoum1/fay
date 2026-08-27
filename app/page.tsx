@@ -68,7 +68,7 @@ const defaultSettings: SiteSettings = {
   secondary_phone: "",
 };
 const defaultCategories: string[] = [];
-const QURAN_RADIO_URL = "https://stream.radiojar.com/8s5u5tpdtwzuv";
+const QURAN_RADIO_URL = "https://qurango.net/radio/mix";
 
 type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
 
@@ -466,7 +466,7 @@ export default function Home() {
           >
             <Radio size={19} />
           </button>
-          {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="flex h-12 items-center gap-2 rounded-xl bg-[#c48738] px-3 text-xs font-bold text-white" aria-label="تثبيت التطبيق"><Download size={16} /> تثبيت التطبيق</button>}
+          {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-12 shrink-0 place-items-center rounded-xl bg-[#c48738] text-white" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
         </div>
       </header>
       <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-5 py-3 lg:hidden">
