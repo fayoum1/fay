@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   Check,
-  Clock3,
   Coffee,
   LockKeyhole,
   LogOut,
@@ -31,10 +30,12 @@ type Order = {
   phone: string;
   items: string;
   total: number;
-  status: "قيد التنفيذ" | "تم";
+  status: OrderStatus;
   created_at: string;
   order_items?: { id: number; name: string; quantity: number; category?: string }[];
 };
+type OrderStatus = "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
+const orderStatuses: OrderStatus[] = ["قيد التنفيذ", "تم", "لم يرد", "غير متاح", "طلب مرفوض"];
 type SiteSettings = {
   id?: number;
   name: string;
@@ -86,9 +87,11 @@ export default function Home() {
   );
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
   const [categoryOptions, setCategoryOptions] = useState(defaultCategories);
+  const [todayOrdersCount, setTodayOrdersCount] = useState(0);
   const [orderCategory, setOrderCategory] = useState("الكل");
   const [orderItem, setOrderItem] = useState("الكل");
   const [orderPeriod, setOrderPeriod] = useState("all");
+  const [orderStatus, setOrderStatus] = useState("الكل");
 
   const filteredItems = menuItems.filter(
     (item) =>
@@ -122,13 +125,23 @@ export default function Home() {
     if (orderPeriod === "90days" && date < new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)) return false;
     if (orderCategory !== "الكل" && !order.order_items?.some((item) => item.category === orderCategory || menuItems.find((menuItem) => menuItem.id === item.id)?.category === orderCategory)) return false;
     if (orderItem !== "الكل" && !order.order_items?.some((item) => item.name === orderItem)) return false;
+    if (orderStatus !== "الكل" && order.status !== orderStatus) return false;
     return true;
   });
+  const statusCounts = orderStatuses.reduce<Record<OrderStatus, number>>((counts, status) => ({ ...counts, [status]: filteredOrders.filter((order) => order.status === status).length }), { "قيد التنفيذ": 0, "تم": 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 });
 
   useEffect(() => {
     fetch("/api/admin/session")
       .then((response) => setAdminAuthenticated(response.ok))
       .catch(() => setAdminAuthenticated(false));
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(todayStart.getDate() + 1);
+    fetch(`/api/orders/count?from=${encodeURIComponent(todayStart.toISOString())}&to=${encodeURIComponent(tomorrowStart.toISOString())}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => { if (data && typeof data.count === "number") setTodayOrdersCount(data.count); })
+      .catch(() => undefined);
     fetch("/api/items")
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
@@ -192,19 +205,17 @@ export default function Home() {
     ]);
     setCart({});
     setPhone("");
+    setTodayOrdersCount((count) => count + 1);
     setNotice("تم تسجيل الحجز بنجاح");
   };
 
-  const markDone = async (id: string) => {
+  const updateOrderStatus = async (id: string, status: OrderStatus) => {
     const numericId = Number(id.replace("#", ""));
-    if (supabase && Number.isFinite(numericId))
-      await supabase
-        .from("orders")
-        .update({ status: "تم" })
-        .eq("id", numericId);
+    const response = await fetch("/api/admin/orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: numericId, status }) });
+    if (!response.ok) return;
     setOrders((current) =>
       current.map((order) =>
-        order.id === id ? { ...order, status: "تم" } : order,
+        order.id === id ? { ...order, status } : order,
       ),
     );
   };
@@ -283,22 +294,11 @@ export default function Home() {
       {view === "cashier" ? (
         <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section>
-            <div className="mb-8 flex items-end justify-between">
-              <div>
-                <p className="mb-2 text-sm font-semibold text-[#c48738]">
-                  صباح الخير، كابتن
-                </p>
-                <h1 className="font-display text-4xl font-bold tracking-tight text-[#173f3a]">
-                  {settings.name}
-                </h1>
-                <p className="mt-2 text-sm text-[#72807a]">
-                  {settings.tagline}
-                </p>
-              </div>
-              <div className="hidden rounded-2xl border border-[#e2e1d8] bg-[#fffdf8] px-4 py-3 text-right sm:block">
+            <div className="mb-8 flex justify-end">
+              <div className="w-full rounded-2xl border border-[#e2e1d8] bg-[#fffdf8] px-4 py-3 text-right sm:w-auto">
                 <p className="text-[11px] text-[#89918c]">طلبات اليوم</p>
                 <p className="font-display text-2xl font-bold text-[#173f3a]">
-                  24
+                  {todayOrdersCount}
                 </p>
               </div>
             </div>
@@ -533,14 +533,7 @@ export default function Home() {
               </h1>
             </div>
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-[#e4eee5] px-4 py-3 text-sm font-semibold text-[#39704f]">
-                <span className="ml-2 inline-block size-2 rounded-full bg-[#5aa67d]" />
-                {
-                  orders.filter((order) => order.status === "قيد التنفيذ")
-                    .length
-                }{" "}
-                قيد التنفيذ
-              </div>
+              <div className="flex flex-wrap justify-end gap-2">{orderStatuses.map((status) => <div key={status} className={`rounded-xl px-3 py-2 text-xs font-semibold ${status === "قيد التنفيذ" ? "bg-[#fff0d4] text-[#a66c20]" : status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#f0ece8] text-[#7d6559]"}`}><span className="ml-1">{statusCounts[status]}</span> {status}</div>)}</div>
               <button
                 onClick={logoutAdmin}
                 className="flex items-center gap-2 rounded-xl border border-[#dedfd8] bg-white px-4 py-3 text-sm font-semibold text-[#72807a]"
@@ -575,7 +568,7 @@ export default function Home() {
             <ItemManager menuItems={menuItems} setMenuItems={setMenuItems} categories={categoryOptions} setCategories={setCategoryOptions} onSessionExpired={() => { setAdminAuthenticated(false); setView("admin"); }} />
           ) : (
             <>
-            <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4"><div className="mb-3 flex items-center justify-between"><h2 className="font-display text-lg font-bold text-[#173f3a]">فلترة الطلبات</h2><span className="text-xs text-[#89918c]">{filteredOrders.length} نتيجة</span></div><div className="grid gap-3 sm:grid-cols-3"><select value={orderCategory} onChange={(event) => setOrderCategory(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الفئات</option>{categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderItem} onChange={(event) => setOrderItem(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الأصناف</option>{orderItems.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderPeriod} onChange={(event) => setOrderPeriod(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="90days">آخر 90 يوم</option></select></div></div>
+            <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4"><div className="mb-3 flex items-center justify-between"><h2 className="font-display text-lg font-bold text-[#173f3a]">فلترة الطلبات</h2><span className="text-xs text-[#89918c]">{filteredOrders.length} نتيجة</span></div><div className="grid gap-3 sm:grid-cols-4"><select value={orderCategory} onChange={(event) => setOrderCategory(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الفئات</option>{categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderItem} onChange={(event) => setOrderItem(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الأصناف</option>{orderItems.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderPeriod} onChange={(event) => setOrderPeriod(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="90days">آخر 90 يوم</option></select><select value={orderStatus} onChange={(event) => setOrderStatus(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الحالات</option>{orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></div></div>
             <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
               <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
                 <span>الطلب</span>
@@ -602,18 +595,7 @@ export default function Home() {
                   <span className="font-display font-bold text-[#c48738]">
                     {order.total} ج.م
                   </span>
-                  <button
-                    disabled={order.status === "تم"}
-                    onClick={() => markDone(order.id)}
-                    className={`flex w-fit items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold ${order.status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#fff0d4] text-[#a66c20]"}`}
-                  >
-                    {order.status === "تم" ? (
-                      <Check size={14} />
-                    ) : (
-                      <Clock3 size={14} />
-                    )}
-                    {order.status}
-                  </button>
+                  <select value={order.status} onChange={(event) => void updateOrderStatus(order.id, event.target.value as OrderStatus)} className={`w-fit rounded-lg border-0 px-3 py-2 text-xs font-bold outline-none ${order.status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#fff0d4] text-[#a66c20]"}`}>{orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select>
                 </div>
               ))}
             </div></>

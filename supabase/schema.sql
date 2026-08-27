@@ -17,6 +17,7 @@ create table if not exists public.categories (
   created_at timestamptz not null default now()
 );
 alter table public.categories enable row level security;
+drop policy if exists "categories are readable" on public.categories;
 create policy "categories are readable" on public.categories for select using (true);
 
 create table if not exists public.site_settings (
@@ -32,6 +33,7 @@ create table if not exists public.site_settings (
 
 insert into public.site_settings (id) values (1) on conflict (id) do nothing;
 alter table public.site_settings enable row level security;
+drop policy if exists "site settings are readable" on public.site_settings;
 create policy "site settings are readable" on public.site_settings for select using (true);
 
 insert into storage.buckets (id, name, public) values ('item-images', 'item-images', true) on conflict (id) do nothing;
@@ -41,12 +43,18 @@ create table if not exists public.orders (
   phone text not null,
   items jsonb not null default '[]'::jsonb,
   total numeric(10, 2) not null default 0,
-  status text not null default 'قيد التنفيذ' check (status in ('قيد التنفيذ', 'تم')),
+  status text not null default 'قيد التنفيذ' check (status in ('قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض')),
   created_at timestamptz not null default now()
 );
 
 alter table public.items enable row level security;
 alter table public.orders enable row level security;
+alter table public.orders drop constraint if exists orders_status_check;
+alter table public.orders add constraint orders_status_check check (status in ('قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض'));
+drop policy if exists "items are readable" on public.items;
+drop policy if exists "anyone can create orders" on public.orders;
+drop policy if exists "admins can read orders" on public.orders;
+drop policy if exists "admins can update orders" on public.orders;
 create policy "items are readable" on public.items for select using (active = true);
 create policy "anyone can create orders" on public.orders for insert with check (char_length(phone) >= 8);
 create policy "admins can read orders" on public.orders for select using (true);
