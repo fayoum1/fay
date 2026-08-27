@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   Check,
   Coffee,
+  Download,
   LockKeyhole,
   LogOut,
   Minus,
@@ -33,11 +34,22 @@ type Order = {
   total: number;
   status: OrderStatus;
   created_at: string;
-  order_items?: { id: number; name: string; quantity: number; category?: string }[];
+  order_items?: {
+    id: number;
+    name: string;
+    quantity: number;
+    category?: string;
+  }[];
 };
 type OrderStatus = "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
 type UserRole = "admin" | "staff";
-const orderStatuses: OrderStatus[] = ["قيد التنفيذ", "تم", "لم يرد", "غير متاح", "طلب مرفوض"];
+const orderStatuses: OrderStatus[] = [
+  "قيد التنفيذ",
+  "تم",
+  "لم يرد",
+  "غير متاح",
+  "طلب مرفوض",
+];
 type SiteSettings = {
   id?: number;
   name: string;
@@ -58,11 +70,15 @@ const defaultSettings: SiteSettings = {
 const defaultCategories: string[] = [];
 const QURAN_RADIO_URL = "https://stream.radiojar.com/8s5u5tpdtwzuv";
 
+type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
+
 function validImageUrl(value?: string) {
   if (!value || value === "null" || value === "undefined") return undefined;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : undefined;
   } catch {
     return undefined;
   }
@@ -100,6 +116,7 @@ export default function Home() {
   const cartRef = useRef<HTMLElement>(null);
   const radioRef = useRef<HTMLAudioElement>(null);
   const [radioPlaying, setRadioPlaying] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
 
   const filteredItems = menuItems.filter(
     (item) =>
@@ -122,48 +139,117 @@ export default function Home() {
     "الكل",
     ...new Set(menuItems.map((item) => item.category)),
   ];
-  const orderItems = [...new Set(orders.flatMap((order) => order.order_items?.map((item) => item.name) || []))];
+  const orderItems = [
+    ...new Set(
+      orders.flatMap(
+        (order) => order.order_items?.map((item) => item.name) || [],
+      ),
+    ),
+  ];
   const filteredOrders = orders.filter((order) => {
     const date = new Date(order.created_at);
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (orderPeriod === "today" && date < start) return false;
-    if (orderPeriod === "yesterday") { const yesterday = new Date(start); yesterday.setDate(start.getDate() - 1); if (date < yesterday || date >= start) return false; }
-    if (orderPeriod === "week") { const weekStart = new Date(start); weekStart.setDate(start.getDate() - start.getDay()); if (date < weekStart) return false; }
-    if (orderPeriod === "month" && date < new Date(now.getFullYear(), now.getMonth(), 1)) return false;
-    if (orderPeriod === "90days" && date < new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)) return false;
-    if (orderCategory !== "الكل" && !order.order_items?.some((item) => item.category === orderCategory || menuItems.find((menuItem) => menuItem.id === item.id)?.category === orderCategory)) return false;
-    if (orderItem !== "الكل" && !order.order_items?.some((item) => item.name === orderItem)) return false;
+    if (orderPeriod === "yesterday") {
+      const yesterday = new Date(start);
+      yesterday.setDate(start.getDate() - 1);
+      if (date < yesterday || date >= start) return false;
+    }
+    if (orderPeriod === "week") {
+      const weekStart = new Date(start);
+      weekStart.setDate(start.getDate() - start.getDay());
+      if (date < weekStart) return false;
+    }
+    if (
+      orderPeriod === "month" &&
+      date < new Date(now.getFullYear(), now.getMonth(), 1)
+    )
+      return false;
+    if (
+      orderPeriod === "90days" &&
+      date < new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    )
+      return false;
+    if (
+      orderCategory !== "الكل" &&
+      !order.order_items?.some(
+        (item) =>
+          item.category === orderCategory ||
+          menuItems.find((menuItem) => menuItem.id === item.id)?.category ===
+            orderCategory,
+      )
+    )
+      return false;
+    if (
+      orderItem !== "الكل" &&
+      !order.order_items?.some((item) => item.name === orderItem)
+    )
+      return false;
     if (orderStatus !== "الكل" && order.status !== orderStatus) return false;
     return true;
   });
-  const statusCounts = orderStatuses.reduce<Record<OrderStatus, number>>((counts, status) => ({ ...counts, [status]: filteredOrders.filter((order) => order.status === status).length }), { "قيد التنفيذ": 0, "تم": 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 });
+  const statusCounts = orderStatuses.reduce<Record<OrderStatus, number>>(
+    (counts, status) => ({
+      ...counts,
+      [status]: filteredOrders.filter((order) => order.status === status)
+        .length,
+    }),
+    { "قيد التنفيذ": 0, تم: 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 },
+  );
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    const handleInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
+    window.addEventListener("beforeinstallprompt", handleInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleInstallPrompt);
+  }, []);
 
   useEffect(() => {
     fetch("/api/admin/session")
-      .then(async (response) => { const data = await response.json().catch(() => null); setAdminAuthenticated(response.ok); if (response.ok) setUserRole(data?.role || "admin"); })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        setAdminAuthenticated(response.ok);
+        if (response.ok) setUserRole(data?.role || "admin");
+      })
       .catch(() => setAdminAuthenticated(false));
     const radio = radioRef.current;
     if (radio) {
-      radio.play().then(() => setRadioPlaying(true)).catch(() => setRadioPlaying(false));
+      radio
+        .play()
+        .then(() => setRadioPlaying(true))
+        .catch(() => setRadioPlaying(false));
     }
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const tomorrowStart = new Date(todayStart);
     tomorrowStart.setDate(todayStart.getDate() + 1);
-    fetch(`/api/orders/count?from=${encodeURIComponent(todayStart.toISOString())}&to=${encodeURIComponent(tomorrowStart.toISOString())}`)
+    fetch(
+      `/api/orders/count?from=${encodeURIComponent(todayStart.toISOString())}&to=${encodeURIComponent(tomorrowStart.toISOString())}`,
+    )
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => { if (data && typeof data.count === "number") setTodayOrdersCount(data.count); })
+      .then((data) => {
+        if (data && typeof data.count === "number")
+          setTodayOrdersCount(data.count);
+      })
       .catch(() => undefined);
     fetch("/api/items")
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (Array.isArray(data) && data.length) setMenuItems(data.map((item) => ({ ...item, color: item.color || "bg-[#e9d3b1]" })));
+        if (Array.isArray(data) && data.length)
+          setMenuItems(
+            data.map((item) => ({
+              ...item,
+              color: item.color || "bg-[#e9d3b1]",
+            })),
+          );
       })
       .catch(() => undefined);
     fetch("/api/admin/orders")
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => { if (Array.isArray(data)) setOrders(data); })
+      .then((data) => {
+        if (Array.isArray(data)) setOrders(data);
+      })
       .catch(() => undefined);
     fetch("/api/settings")
       .then((response) => (response.ok ? response.json() : null))
@@ -173,9 +259,19 @@ export default function Home() {
       .catch(() => undefined);
     fetch("/api/categories")
       .then((response) => (response.ok ? response.json() : null))
-      .then((data) => { if (Array.isArray(data) && data.length) setCategoryOptions(data.map((category) => category.name)); })
+      .then((data) => {
+        if (Array.isArray(data) && data.length)
+          setCategoryOptions(data.map((category) => category.name));
+      })
       .catch(() => undefined);
   }, []);
+
+  const installApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  };
 
   const toggleRadio = async () => {
     const radio = radioRef.current;
@@ -205,20 +301,18 @@ export default function Home() {
       .map(({ item, quantity }) => `${item.name} × ${quantity}`)
       .join("، ");
     const { error } = supabase
-      ? await supabase
-          .from("orders")
-          .insert({
-            phone: phone.trim(),
-            items: cartItems.map(({ item, quantity }) => ({
-              id: item.id,
-              name: item.name,
-              category: item.category,
-              quantity,
-              price: item.price,
-            })),
-            total,
-            status: "قيد التنفيذ",
-          })
+      ? await supabase.from("orders").insert({
+          phone: phone.trim(),
+          items: cartItems.map(({ item, quantity }) => ({
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            quantity,
+            price: item.price,
+          })),
+          total,
+          status: "قيد التنفيذ",
+        })
       : { error: null };
     if (error) return setNotice("تعذر حفظ الطلب، راجع اتصال Supabase");
     setOrders((current) => [
@@ -240,12 +334,14 @@ export default function Home() {
 
   const updateOrderStatus = async (id: string, status: OrderStatus) => {
     const numericId = Number(id.replace("#", ""));
-    const response = await fetch("/api/admin/orders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: numericId, status }) });
+    const response = await fetch("/api/admin/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: numericId, status }),
+    });
     if (!response.ok) return;
     setOrders((current) =>
-      current.map((order) =>
-        order.id === id ? { ...order, status } : order,
-      ),
+      current.map((order) => (order.id === id ? { ...order, status } : order)),
     );
   };
 
@@ -264,7 +360,8 @@ export default function Home() {
       body: JSON.stringify({ pin: adminPin, role: loginRole }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) return setAdminError(result.error || "الرقم السري غير صحيح");
+    if (!response.ok)
+      return setAdminError(result.error || "الرقم السري غير صحيح");
     setAdminAuthenticated(true);
     setUserRole(result.role || loginRole);
     setAdminPin("");
@@ -316,16 +413,101 @@ export default function Home() {
               الأدمن
             </button>
           </nav>
-          <div className="hidden items-center gap-2 lg:flex"><div className="flex h-14 min-w-32 items-center justify-center gap-3 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-4 text-right"><p className="text-[11px] text-[#89918c]">طلبات اليوم</p><p className="font-display text-xl font-bold text-[#173f3a]">{todayOrdersCount}</p></div><button onClick={() => cartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="relative grid size-14 place-items-center rounded-xl bg-[#173f3a] text-white" aria-label="فتح السلة"><ShoppingBag size={18} />{cartCount > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#c48738] text-[10px] font-bold text-white">{cartCount}</span>}</button><button onClick={toggleRadio} className={`grid size-14 place-items-center rounded-xl border ${radioPlaying ? "border-[#c48738] bg-[#fff0d4] text-[#a66c20]" : "border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]"}`} aria-label={radioPlaying ? "إيقاف إذاعة القرآن الكريم" : "تشغيل إذاعة القرآن الكريم"} title="إذاعة القرآن الكريم من مصر"><Radio size={19} /></button></div>
+          <div className="hidden items-center gap-2 lg:flex">
+            <div className="flex h-14 min-w-32 items-center justify-center gap-3 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-4 text-right">
+              <p className="text-[11px] text-[#89918c]">طلبات اليوم</p>
+              <p className="font-display text-xl font-bold text-[#173f3a]">
+                {todayOrdersCount}
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                cartRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                })
+              }
+              className="relative grid size-14 place-items-center rounded-xl bg-[#173f3a] text-white"
+              aria-label="فتح السلة"
+            >
+              <ShoppingBag size={18} />
+              {cartCount > 0 && (
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#c48738] text-[10px] font-bold text-white">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          </div>
           <div className="hidden items-center gap-2 text-xs text-[#72807a] sm:flex">
             <span className="size-2 rounded-full bg-[#5aa67d]" />{" "}
             {settings.branch} <span className="mx-1 text-[#c2c8c2]">|</span>{" "}
             {settings.phone || "أضف رقم الهاتف"}
           </div>
+          <button
+            onClick={toggleRadio}
+            className={`grid size-12 shrink-0 place-items-center rounded-xl border ${radioPlaying ? "border-[#c48738] bg-[#fff0d4] text-[#a66c20]" : "border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]"}`}
+            aria-label={radioPlaying ? "إيقاف إذاعة القرآن الكريم" : "تشغيل إذاعة القرآن الكريم"}
+            title="إذاعة القرآن الكريم من مصر"
+          >
+            <Radio size={19} />
+          </button>
+          {installPrompt && <button onClick={installApp} className="flex h-12 items-center gap-2 rounded-xl bg-[#c48738] px-3 text-xs font-bold text-white" aria-label="تثبيت التطبيق"><Download size={16} /> تثبيت التطبيق</button>}
         </div>
       </header>
-      <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-5 py-3 lg:hidden"><div className="mx-auto grid max-w-[1440px] grid-cols-2 items-center gap-2"><nav className="flex h-14 w-full rounded-xl bg-[#eef0ea] p-1 text-xs font-semibold"><button onClick={() => setView("cashier")} className={`flex-1 rounded-lg px-2 py-2 ${view === "cashier" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}>الكاشير</button><button onClick={openAdmin} className={`flex-1 rounded-lg px-2 py-2 ${view === "admin" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}>الأدمن</button></nav><div className="flex items-center justify-end gap-2"><div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-2"><p className="text-[10px] text-[#89918c]">طلبات اليوم</p><p className="font-display text-lg font-bold text-[#173f3a]">{todayOrdersCount}</p></div><button onClick={() => cartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="relative grid size-14 shrink-0 place-items-center rounded-xl bg-[#173f3a] text-white" aria-label="فتح السلة"><ShoppingBag size={18} />{cartCount > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#c48738] text-[10px] font-bold text-white">{cartCount}</span>}</button><button onClick={toggleRadio} className={`grid size-14 shrink-0 place-items-center rounded-xl border ${radioPlaying ? "border-[#c48738] bg-[#fff0d4] text-[#a66c20]" : "border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]"}`} aria-label={radioPlaying ? "إيقاف إذاعة القرآن الكريم" : "تشغيل إذاعة القرآن الكريم"} title="إذاعة القرآن الكريم من مصر"><Radio size={19} /></button></div></div></div>
-      <audio ref={radioRef} src={QURAN_RADIO_URL} autoPlay loop preload="none" onPlay={() => setRadioPlaying(true)} onPause={() => setRadioPlaying(false)} aria-label="إذاعة القرآن الكريم من مصر" />
+      <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-5 py-3 lg:hidden">
+        <div className="mx-auto grid max-w-[1440px] grid-cols-2 items-center gap-2">
+          <nav className="flex h-14 w-full rounded-xl bg-[#eef0ea] p-1 text-xs font-semibold">
+            <button
+              onClick={() => setView("cashier")}
+              className={`flex-1 rounded-lg px-2 py-2 ${view === "cashier" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+            >
+              الكاشير
+            </button>
+            <button
+              onClick={openAdmin}
+              className={`flex-1 rounded-lg px-2 py-2 ${view === "admin" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+            >
+              الأدمن
+            </button>
+          </nav>
+          <div className="flex items-center justify-end gap-2">
+            <div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-2">
+              <p className="text-[10px] text-[#89918c]">طلبات اليوم</p>
+              <p className="font-display text-lg font-bold text-[#173f3a]">
+                {todayOrdersCount}
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                cartRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center",
+                })
+              }
+              className="relative grid size-14 shrink-0 place-items-center rounded-xl bg-[#173f3a] text-white"
+              aria-label="فتح السلة"
+            >
+              <ShoppingBag size={18} />
+              {cartCount > 0 && (
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#c48738] text-[10px] font-bold text-white">
+                  {cartCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+      <audio
+        ref={radioRef}
+        src={QURAN_RADIO_URL}
+        autoPlay
+        loop
+        playsInline
+        preload="none"
+        onPlay={() => setRadioPlaying(true)}
+        onPause={() => setRadioPlaying(false)}
+        aria-label="إذاعة القرآن الكريم من مصر"
+      />
       {view === "cashier" ? (
         <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section>
@@ -396,7 +578,10 @@ export default function Home() {
               ))}
             </div>
           </section>
-          <aside ref={cartRef} className="h-fit rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5 shadow-[0_12px_40px_#173f3a08] lg:sticky lg:top-6">
+          <aside
+            ref={cartRef}
+            className="h-fit rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5 shadow-[0_12px_40px_#173f3a08] lg:sticky lg:top-6"
+          >
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-10 place-items-center rounded-xl bg-[#f4e7c9] text-[#c48738]">
@@ -529,7 +714,22 @@ export default function Home() {
             <p className="mt-2 text-sm text-[#72807a]">
               أدخل الرقم السري للوصول إلى الطلبات.
             </p>
-            <div className="mt-6 grid grid-cols-2 gap-2"><button type="button" onClick={() => setLoginRole("admin")} className={`h-11 rounded-xl text-sm font-bold ${loginRole === "admin" ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#72807a]"}`}>أدمن</button><button type="button" onClick={() => setLoginRole("staff")} className={`h-11 rounded-xl text-sm font-bold ${loginRole === "staff" ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#72807a]"}`}>موظف</button></div>
+            <div className="mt-6 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setLoginRole("admin")}
+                className={`h-11 rounded-xl text-sm font-bold ${loginRole === "admin" ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#72807a]"}`}
+              >
+                أدمن
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginRole("staff")}
+                className={`h-11 rounded-xl text-sm font-bold ${loginRole === "staff" ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#72807a]"}`}
+              >
+                موظف
+              </button>
+            </div>
             <input
               autoFocus
               type="password"
@@ -561,7 +761,17 @@ export default function Home() {
               </h1>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex flex-wrap justify-end gap-2">{orderStatuses.map((status) => <div key={status} className={`rounded-xl px-3 py-2 text-xs font-semibold ${status === "قيد التنفيذ" ? "bg-[#fff0d4] text-[#a66c20]" : status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#f0ece8] text-[#7d6559]"}`}><span className="ml-1">{statusCounts[status]}</span> {status}</div>)}</div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {orderStatuses.map((status) => (
+                  <div
+                    key={status}
+                    className={`rounded-xl px-3 py-2 text-xs font-semibold ${status === "قيد التنفيذ" ? "bg-[#fff0d4] text-[#a66c20]" : status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#f0ece8] text-[#7d6559]"}`}
+                  >
+                    <span className="ml-1">{statusCounts[status]}</span>{" "}
+                    {status}
+                  </div>
+                ))}
+              </div>
               <button
                 onClick={logoutAdmin}
                 className="flex items-center gap-2 rounded-xl border border-[#dedfd8] bg-white px-4 py-3 text-sm font-semibold text-[#72807a]"
@@ -570,67 +780,189 @@ export default function Home() {
               </button>
             </div>
           </div>
-          {userRole === "admin" && <nav className="mb-6 flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
-            <button
-              onClick={() => setAdminTab("orders")}
-              className={`rounded-lg px-5 py-2.5 transition ${adminTab === "orders" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
-            >
-              الطلبات
-            </button>
-            <button
-              onClick={() => setAdminTab("menu")}
-              className={`rounded-lg px-5 py-2.5 transition ${adminTab === "menu" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
-            >
-              إدارة القائمة
-            </button>
-            <button
-              onClick={() => setAdminTab("settings")}
-              className={`rounded-lg px-5 py-2.5 transition ${adminTab === "settings" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
-            >
-              إعدادات الصفحة
-            </button>
-          </nav>}
+          {userRole === "admin" && (
+            <nav className="mb-6 flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
+              <button
+                onClick={() => setAdminTab("orders")}
+                className={`rounded-lg px-5 py-2.5 transition ${adminTab === "orders" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+              >
+                الطلبات
+              </button>
+              <button
+                onClick={() => setAdminTab("menu")}
+                className={`rounded-lg px-5 py-2.5 transition ${adminTab === "menu" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+              >
+                إدارة القائمة
+              </button>
+              <button
+                onClick={() => setAdminTab("settings")}
+                className={`rounded-lg px-5 py-2.5 transition ${adminTab === "settings" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+              >
+                إعدادات الصفحة
+              </button>
+            </nav>
+          )}
           {userRole === "staff" ? (
             <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
-              {filteredOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-4 border-b border-[#ededE7] px-5 py-5 last:border-0"><div><p className="font-display font-bold text-[#173f3a]">{order.id} <span className="mr-3 text-sm font-normal text-[#596963]">{order.phone}</span></p><p className="mt-1 text-sm text-[#596963]">{order.items}</p><small className="text-xs text-[#a1aaa3]">{formatOrderDate(order.created_at)}</small></div><select value={order.status} onChange={(event) => void updateOrderStatus(order.id, event.target.value as OrderStatus)} className="rounded-lg border-0 bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] outline-none">{orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></div>)}
+              {filteredOrders.map((order) => (
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between gap-4 border-b border-[#ededE7] px-5 py-5 last:border-0"
+                >
+                  <div>
+                    <p className="font-display font-bold text-[#173f3a]">
+                      {order.id}{" "}
+                      <span className="mr-3 text-sm font-normal text-[#596963]">
+                        {order.phone}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-sm text-[#596963]">{order.items}</p>
+                    <small className="text-xs text-[#a1aaa3]">
+                      {formatOrderDate(order.created_at)}
+                    </small>
+                  </div>
+                  <select
+                    value={order.status}
+                    onChange={(event) =>
+                      void updateOrderStatus(
+                        order.id,
+                        event.target.value as OrderStatus,
+                      )
+                    }
+                    className="rounded-lg border-0 bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] outline-none"
+                  >
+                    {orderStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
             </div>
           ) : adminTab === "settings" ? (
             <SettingsManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "menu" ? (
-            <ItemManager menuItems={menuItems} setMenuItems={setMenuItems} categories={categoryOptions} setCategories={setCategoryOptions} onSessionExpired={() => { setAdminAuthenticated(false); setView("admin"); }} />
+            <ItemManager
+              menuItems={menuItems}
+              setMenuItems={setMenuItems}
+              categories={categoryOptions}
+              setCategories={setCategoryOptions}
+              onSessionExpired={() => {
+                setAdminAuthenticated(false);
+                setView("admin");
+              }}
+            />
           ) : (
             <>
-            <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4"><div className="mb-3 flex items-center justify-between"><h2 className="font-display text-lg font-bold text-[#173f3a]">فلترة الطلبات</h2><span className="text-xs text-[#89918c]">{filteredOrders.length} نتيجة</span></div><div className="grid gap-3 sm:grid-cols-4"><select value={orderCategory} onChange={(event) => setOrderCategory(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الفئات</option>{categoryOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderItem} onChange={(event) => setOrderItem(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الأصناف</option>{orderItems.map((option) => <option key={option} value={option}>{option}</option>)}</select><select value={orderPeriod} onChange={(event) => setOrderPeriod(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="yesterday">أمس</option><option value="week">هذا الأسبوع</option><option value="month">هذا الشهر</option><option value="90days">آخر 90 يوم</option></select><select value={orderStatus} onChange={(event) => setOrderStatus(event.target.value)} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option value="الكل">كل الحالات</option>{orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></div></div>
-            <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
-              <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
-                <span>الطلب</span>
-                <span>رقم الهاتف</span>
-                <span>الأصناف</span>
-                <span>الإجمالي</span>
-                <span>الحالة</span>
-              </div>
-              {filteredOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="grid gap-3 border-b border-[#ededE7] px-5 py-5 last:border-0 sm:grid-cols-[100px_160px_1fr_100px_130px] sm:items-center sm:gap-4"
-                >
-                  <span className="font-display font-bold text-[#173f3a]">
-                    {order.id}
+              <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-lg font-bold text-[#173f3a]">
+                    فلترة الطلبات
+                  </h2>
+                  <span className="text-xs text-[#89918c]">
+                    {filteredOrders.length} نتيجة
                   </span>
-                  <span className="text-sm text-[#596963]">{order.phone}</span>
-                  <span className="text-sm text-[#596963]">
-                    {order.items}
-                    <small className="mr-2 block text-xs text-[#a1aaa3]">
-                      {formatOrderDate(order.created_at)}
-                    </small>
-                  </span>
-                  <span className="font-display font-bold text-[#c48738]">
-                    {order.total} ج.م
-                  </span>
-                  <select value={order.status} onChange={(event) => void updateOrderStatus(order.id, event.target.value as OrderStatus)} className={`w-fit rounded-lg border-0 px-3 py-2 text-xs font-bold outline-none ${order.status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#fff0d4] text-[#a66c20]"}`}>{orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select>
                 </div>
-              ))}
-            </div></>
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <select
+                    value={orderCategory}
+                    onChange={(event) => setOrderCategory(event.target.value)}
+                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل الفئات</option>
+                    {categoryOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={orderItem}
+                    onChange={(event) => setOrderItem(event.target.value)}
+                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل الأصناف</option>
+                    {orderItems.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={orderPeriod}
+                    onChange={(event) => setOrderPeriod(event.target.value)}
+                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="all">كل الفترات</option>
+                    <option value="today">اليوم</option>
+                    <option value="yesterday">أمس</option>
+                    <option value="week">هذا الأسبوع</option>
+                    <option value="month">هذا الشهر</option>
+                    <option value="90days">آخر 90 يوم</option>
+                  </select>
+                  <select
+                    value={orderStatus}
+                    onChange={(event) => setOrderStatus(event.target.value)}
+                    className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل الحالات</option>
+                    {orderStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
+                <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
+                  <span>الطلب</span>
+                  <span>رقم الهاتف</span>
+                  <span>الأصناف</span>
+                  <span>الإجمالي</span>
+                  <span>الحالة</span>
+                </div>
+                {filteredOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="grid gap-3 border-b border-[#ededE7] px-5 py-5 last:border-0 sm:grid-cols-[100px_160px_1fr_100px_130px] sm:items-center sm:gap-4"
+                  >
+                    <span className="font-display font-bold text-[#173f3a]">
+                      {order.id}
+                    </span>
+                    <span className="text-sm text-[#596963]">
+                      {order.phone}
+                    </span>
+                    <span className="text-sm text-[#596963]">
+                      {order.items}
+                      <small className="mr-2 block text-xs text-[#a1aaa3]">
+                        {formatOrderDate(order.created_at)}
+                      </small>
+                    </span>
+                    <span className="font-display font-bold text-[#c48738]">
+                      {order.total} ج.م
+                    </span>
+                    <select
+                      value={order.status}
+                      onChange={(event) =>
+                        void updateOrderStatus(
+                          order.id,
+                          event.target.value as OrderStatus,
+                        )
+                      }
+                      className={`w-fit rounded-lg border-0 px-3 py-2 text-xs font-bold outline-none ${order.status === "تم" ? "bg-[#e4eee5] text-[#39704f]" : "bg-[#fff0d4] text-[#a66c20]"}`}
+                    >
+                      {orderStatuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </section>
       )}
@@ -655,19 +987,33 @@ function ItemManager({
   onSessionExpired: () => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState({ name: "", category: categories[0] || "", price: "", imageUrl: "" });
+  const [draft, setDraft] = useState({
+    name: "",
+    category: categories[0] || "",
+    price: "",
+    imageUrl: "",
+  });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [newCategory, setNewCategory] = useState("");
 
   const addCategory = async () => {
     const name = newCategory.trim();
-    if (!name || categories.includes(name)) return setMessage("اكتب فئة جديدة غير مكررة");
-    const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    if (!name || categories.includes(name))
+      return setMessage("اكتب فئة جديدة غير مكررة");
+    const response = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
     const result = await response.json().catch(() => ({}));
-    if (response.status === 401) { onSessionExpired(); return setMessage("انتهت جلسة الأدمن، سجل الدخول مرة أخرى"); }
+    if (response.status === 401) {
+      onSessionExpired();
+      return setMessage("انتهت جلسة الأدمن، سجل الدخول مرة أخرى");
+    }
     if (!response.ok) return setMessage(result.error || "تعذر حفظ الفئة");
-    if (!categories.includes(result.name || name)) setCategories([...categories, result.name || name]);
+    if (!categories.includes(result.name || name))
+      setCategories([...categories, result.name || name]);
     setDraft((current) => ({ ...current, category: result.name || name }));
     setNewCategory("");
     setMessage("تمت إضافة الفئة، اخترها الآن للصنف");
@@ -681,7 +1027,12 @@ function ItemManager({
       price: Number(draft.price),
       emoji: "☕",
     };
-    if (!payload.name || !payload.category || !Number.isFinite(payload.price) || payload.price < 0)
+    if (
+      !payload.name ||
+      !payload.category ||
+      !Number.isFinite(payload.price) ||
+      payload.price < 0
+    )
       return setMessage("راجع اسم الصنف والسعر");
     const formData = new FormData();
     Object.entries(editingId ? { id: editingId, ...payload } : payload).forEach(
@@ -692,9 +1043,11 @@ function ItemManager({
       method: editingId ? "PATCH" : "POST",
       body: formData,
     });
-    if (response.status === 401) { onSessionExpired(); return setMessage("انتهت جلسة الأدمن، سجل الدخول مرة أخرى"); }
-    if (!response.ok)
-      return setMessage("تعذر حفظ الصنف");
+    if (response.status === 401) {
+      onSessionExpired();
+      return setMessage("انتهت جلسة الأدمن، سجل الدخول مرة أخرى");
+    }
+    if (!response.ok) return setMessage("تعذر حفظ الصنف");
     const savedResponse = await response.json();
     const saved = {
       id: savedResponse?.id || editingId || Date.now(),
@@ -752,7 +1105,35 @@ function ItemManager({
         </div>
         <span className="text-xs text-[#89918c]">{menuItems.length} أصناف</span>
       </div>
-      <div className="mb-5 rounded-xl border border-[#e9e9e2] bg-[#fbfbf8] p-4"><div className="mb-3"><p className="text-sm font-bold text-[#173f3a]">الفئات المسجلة</p><p className="mt-1 text-xs text-[#89918c]">أضف الفئة واحفظها هنا أولًا، ثم اخترها عند تسجيل الصنف.</p></div><div className="flex gap-2"><input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void addCategory(); } }} placeholder="مثال: مشروبات ساخنة" className="h-10 flex-1 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]" /><button type="button" onClick={addCategory} className="h-10 rounded-lg bg-[#c48738] px-4 text-sm font-bold text-white">حفظ الفئة</button></div></div>
+      <div className="mb-5 rounded-xl border border-[#e9e9e2] bg-[#fbfbf8] p-4">
+        <div className="mb-3">
+          <p className="text-sm font-bold text-[#173f3a]">الفئات المسجلة</p>
+          <p className="mt-1 text-xs text-[#89918c]">
+            أضف الفئة واحفظها هنا أولًا، ثم اخترها عند تسجيل الصنف.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={newCategory}
+            onChange={(event) => setNewCategory(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void addCategory();
+              }
+            }}
+            placeholder="مثال: مشروبات ساخنة"
+            className="h-10 flex-1 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+          />
+          <button
+            type="button"
+            onClick={addCategory}
+            className="h-10 rounded-lg bg-[#c48738] px-4 text-sm font-bold text-white"
+          >
+            حفظ الفئة
+          </button>
+        </div>
+      </div>
       <form
         onSubmit={saveItem}
         className="mb-5 grid gap-2 rounded-xl bg-[#f6f6f1] p-3 sm:grid-cols-[1.5fr_1fr_100px_auto_auto]"
@@ -764,7 +1145,19 @@ function ItemManager({
           placeholder="اسم الصنف"
           className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
         />
-        <select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]">{categories.map((category) => <option key={category} value={category}>{category}</option>)}</select>
+        <select
+          value={draft.category}
+          onChange={(event) =>
+            setDraft({ ...draft, category: event.target.value })
+          }
+          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+        >
+          {categories.map((category) => (
+            <option key={category} value={category}>
+              {category}
+            </option>
+          ))}
+        </select>
         <input
           required
           type="number"
@@ -790,7 +1183,10 @@ function ItemManager({
             }}
           />
         </label>
-        <button disabled={!categories.length} className="h-10 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">
+        <button
+          disabled={!categories.length}
+          className="h-10 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
           {editingId ? "حفظ التعديل" : "إضافة صنف"}
         </button>
       </form>
@@ -806,8 +1202,44 @@ function ItemManager({
       {message && (
         <p className="mb-3 text-xs font-semibold text-[#56816c]">{message}</p>
       )}
-      {!categories.length && <p className="mb-3 rounded-lg bg-[#fff0d4] p-3 text-xs font-semibold text-[#a66c20]">أضف فئة أولًا حتى تتمكن من تسجيل صنف.</p>}
-      {!!categories.length && <div className="mb-3 flex flex-wrap gap-2">{categories.map((category) => <span key={category} className="flex items-center gap-1 rounded-lg bg-[#eef0ea] px-3 py-1.5 text-xs font-semibold text-[#56816c]">{category}<button type="button" onClick={async () => { const response = await fetch("/api/categories", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: category }) }); if (!response.ok) return setMessage("لا يمكن حذف فئة مرتبطة بصنف"); setCategories(categories.filter((entry) => entry !== category)); if (draft.category === category) setDraft({ ...draft, category: "" }); }} aria-label={`حذف فئة ${category}`} className="text-[#a16a4a]"><Trash2 size={12} /></button></span>)}</div>}
+      {!categories.length && (
+        <p className="mb-3 rounded-lg bg-[#fff0d4] p-3 text-xs font-semibold text-[#a66c20]">
+          أضف فئة أولًا حتى تتمكن من تسجيل صنف.
+        </p>
+      )}
+      {!!categories.length && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {categories.map((category) => (
+            <span
+              key={category}
+              className="flex items-center gap-1 rounded-lg bg-[#eef0ea] px-3 py-1.5 text-xs font-semibold text-[#56816c]"
+            >
+              {category}
+              <button
+                type="button"
+                onClick={async () => {
+                  const response = await fetch("/api/categories", {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: category }),
+                  });
+                  if (!response.ok)
+                    return setMessage("لا يمكن حذف فئة مرتبطة بصنف");
+                  setCategories(
+                    categories.filter((entry) => entry !== category),
+                  );
+                  if (draft.category === category)
+                    setDraft({ ...draft, category: "" });
+                }}
+                aria-label={`حذف فئة ${category}`}
+                className="text-[#a16a4a]"
+              >
+                <Trash2 size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="grid gap-2">
         {menuItems.map((item) => (
           <div
@@ -849,7 +1281,13 @@ function ItemManager({
   );
 }
 
-function SettingsManager({ settings, setSettings }: { settings: SiteSettings; setSettings: (settings: SiteSettings) => void }) {
+function SettingsManager({
+  settings,
+  setSettings,
+}: {
+  settings: SiteSettings;
+  setSettings: (settings: SiteSettings) => void;
+}) {
   const [draft, setDraft] = useState(settings);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
@@ -857,10 +1295,16 @@ function SettingsManager({ settings, setSettings }: { settings: SiteSettings; se
   const saveSettings = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData();
-    Object.entries(draft).forEach(([key, value]) => { if (value !== undefined) formData.append(key, String(value)); });
+    Object.entries(draft).forEach(([key, value]) => {
+      if (value !== undefined) formData.append(key, String(value));
+    });
     if (logoFile) formData.append("logo", logoFile);
-    const response = await fetch("/api/settings", { method: "PATCH", body: formData });
-    if (!response.ok) return setMessage("تعذر حفظ الإعدادات. تأكد من إعداد Supabase");
+    const response = await fetch("/api/settings", {
+      method: "PATCH",
+      body: formData,
+    });
+    if (!response.ok)
+      return setMessage("تعذر حفظ الإعدادات. تأكد من إعداد Supabase");
     const saved = await response.json();
     setSettings(saved);
     setDraft(saved);
@@ -868,6 +1312,103 @@ function SettingsManager({ settings, setSettings }: { settings: SiteSettings; se
     setMessage("تم حفظ بيانات الصفحة");
   };
 
-  return <section className="max-w-3xl rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5"><div className="mb-6"><p className="text-sm font-semibold text-[#c48738]">ما يراه العميل</p><h2 className="font-display text-2xl font-bold text-[#173f3a]">إعدادات الصفحة</h2><p className="mt-1 text-sm text-[#72807a]">غيّر اسم المكان والهوية ووسائل التواصل الظاهرة في الواجهة.</p></div><form onSubmit={saveSettings} className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-semibold">اسم الصفحة<input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">الوصف المختصر<input value={draft.tagline} onChange={(event) => setDraft({ ...draft, tagline: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">اسم الفرع<input value={draft.branch} onChange={(event) => setDraft({ ...draft, branch: event.target.value })} className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">رقم الهاتف الأساسي<input value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} placeholder="01xxxxxxxxx" className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">رقم هاتف إضافي<input value={draft.secondary_phone} onChange={(event) => setDraft({ ...draft, secondary_phone: event.target.value })} placeholder="01xxxxxxxxx" className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]" /></label><label className="text-sm font-semibold">اللوجو<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0] || null; setLogoFile(file); if (file) setDraft({ ...draft, logo_url: URL.createObjectURL(file) }); }} className="mt-2 block w-full rounded-xl border border-dashed border-[#c8cec7] bg-[#f6f6f1] p-2 text-xs font-normal" /></label>{draft.logo_url && <div className="flex items-center gap-3 text-sm text-[#72807a] sm:col-span-2"><span className="size-16 rounded-xl bg-cover bg-center" style={{ backgroundImage: `url(${draft.logo_url})` }} /> معاينة اللوجو</div>}<button className="h-12 rounded-xl bg-[#173f3a] font-bold text-white sm:col-span-2">حفظ إعدادات الصفحة</button></form>{message && <p className="mt-4 text-center text-sm font-semibold text-[#56816c]">{message}</p>}</section>;
+  return (
+    <section className="max-w-3xl rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
+      <div className="mb-6">
+        <p className="text-sm font-semibold text-[#c48738]">ما يراه العميل</p>
+        <h2 className="font-display text-2xl font-bold text-[#173f3a]">
+          إعدادات الصفحة
+        </h2>
+        <p className="mt-1 text-sm text-[#72807a]">
+          غيّر اسم المكان والهوية ووسائل التواصل الظاهرة في الواجهة.
+        </p>
+      </div>
+      <form onSubmit={saveSettings} className="grid gap-4 sm:grid-cols-2">
+        <label className="text-sm font-semibold">
+          اسم الصفحة
+          <input
+            required
+            value={draft.name}
+            onChange={(event) =>
+              setDraft({ ...draft, name: event.target.value })
+            }
+            className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]"
+          />
+        </label>
+        <label className="text-sm font-semibold">
+          الوصف المختصر
+          <input
+            value={draft.tagline}
+            onChange={(event) =>
+              setDraft({ ...draft, tagline: event.target.value })
+            }
+            className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]"
+          />
+        </label>
+        <label className="text-sm font-semibold">
+          اسم الفرع
+          <input
+            value={draft.branch}
+            onChange={(event) =>
+              setDraft({ ...draft, branch: event.target.value })
+            }
+            className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]"
+          />
+        </label>
+        <label className="text-sm font-semibold">
+          رقم الهاتف الأساسي
+          <input
+            value={draft.phone}
+            onChange={(event) =>
+              setDraft({ ...draft, phone: event.target.value })
+            }
+            placeholder="01xxxxxxxxx"
+            className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]"
+          />
+        </label>
+        <label className="text-sm font-semibold">
+          رقم هاتف إضافي
+          <input
+            value={draft.secondary_phone}
+            onChange={(event) =>
+              setDraft({ ...draft, secondary_phone: event.target.value })
+            }
+            placeholder="01xxxxxxxxx"
+            className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]"
+          />
+        </label>
+        <label className="text-sm font-semibold">
+          اللوجو
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0] || null;
+              setLogoFile(file);
+              if (file)
+                setDraft({ ...draft, logo_url: URL.createObjectURL(file) });
+            }}
+            className="mt-2 block w-full rounded-xl border border-dashed border-[#c8cec7] bg-[#f6f6f1] p-2 text-xs font-normal"
+          />
+        </label>
+        {draft.logo_url && (
+          <div className="flex items-center gap-3 text-sm text-[#72807a] sm:col-span-2">
+            <span
+              className="size-16 rounded-xl bg-cover bg-center"
+              style={{ backgroundImage: `url(${draft.logo_url})` }}
+            />{" "}
+            معاينة اللوجو
+          </div>
+        )}
+        <button className="h-12 rounded-xl bg-[#173f3a] font-bold text-white sm:col-span-2">
+          حفظ إعدادات الصفحة
+        </button>
+      </form>
+      {message && (
+        <p className="mt-4 text-center text-sm font-semibold text-[#56816c]">
+          {message}
+        </p>
+      )}
+    </section>
+  );
 }
-

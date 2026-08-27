@@ -15,6 +15,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "الفيوم للأعلاف والدواجن | إدارة الطلبات",
   description: "نظام إدارة الطلبات والأصناف للفيوم للأعلاف والدواجن",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "الفيوم للأعلاف" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
