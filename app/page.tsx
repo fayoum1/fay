@@ -214,8 +214,15 @@ export default function Home() {
     fetch("/api/admin/session")
       .then(async (response) => {
         const data = await response.json().catch(() => null);
-        setAdminAuthenticated(response.ok);
-        if (response.ok) setUserRole(data?.role || "admin");
+        setAdminAuthenticated(Boolean(data?.authenticated));
+        if (data?.authenticated) {
+          setUserRole(data?.role || "admin");
+          const ordersResponse = await fetch("/api/admin/orders");
+          if (ordersResponse.ok) {
+            const ordersData = await ordersResponse.json();
+            if (Array.isArray(ordersData)) setOrders(ordersData);
+          }
+        }
       })
       .catch(() => setAdminAuthenticated(false));
     const radio = radioRef.current;
@@ -250,12 +257,6 @@ export default function Home() {
               color: item.color || "bg-[#e9d3b1]",
             })),
           );
-      })
-      .catch(() => undefined);
-    fetch("/api/admin/orders")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
-        if (Array.isArray(data)) setOrders(data);
       })
       .catch(() => undefined);
     fetch("/api/settings")

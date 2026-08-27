@@ -17,7 +17,7 @@ function sessionRole(request: NextRequest): "admin" | "staff" | null {
 
 export async function GET(request: NextRequest) {
   const role = sessionRole(request);
-  return NextResponse.json({ authenticated: Boolean(role), role }, { status: role ? 200 : 401 });
+  return NextResponse.json({ authenticated: Boolean(role), role });
 }
 
 export async function POST(request: NextRequest) {
