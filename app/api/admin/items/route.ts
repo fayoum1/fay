@@ -1,16 +1,6 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const COOKIE_NAME = "rashefa_admin_session";
-
-function hasAdminSession(request: NextRequest) {
-  const pin = process.env.ADMIN_PIN;
-  const expected = pin ? createHmac("sha256", pin).update("admin-session").digest("hex") : null;
-  const received = request.cookies.get(COOKIE_NAME)?.value;
-  if (!expected || !received || received.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(received), Buffer.from(expected));
-}
+import { getAdminRole } from "@/lib/admin-auth";
 
 function database() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -37,7 +27,7 @@ async function itemData(request: NextRequest, client: ReturnType<typeof database
 }
 
 export async function POST(request: NextRequest) {
-  if (!hasAdminSession(request)) return unauthorized();
+  if (getAdminRole(request) !== "admin") return unauthorized();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
   let body;
@@ -48,7 +38,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!hasAdminSession(request)) return unauthorized();
+  if (getAdminRole(request) !== "admin") return unauthorized();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
   let body;
@@ -60,7 +50,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!hasAdminSession(request)) return unauthorized();
+  if (getAdminRole(request) !== "admin") return unauthorized();
   const { id } = await request.json();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });

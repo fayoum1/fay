@@ -1,20 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-const COOKIE_NAME = "rashefa_admin_session";
+import { getAdminRole } from "@/lib/admin-auth";
 
 function client() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   return url && key ? createClient(url, key, { auth: { persistSession: false } }) : null;
-}
-
-function authorized(request: NextRequest) {
-  const pin = process.env.ADMIN_PIN;
-  const expected = pin ? createHmac("sha256", pin).update("admin-session").digest("hex") : "";
-  const received = request.cookies.get(COOKIE_NAME)?.value || "";
-  return Boolean(expected && received.length === expected.length && timingSafeEqual(Buffer.from(received), Buffer.from(expected)));
 }
 
 export async function GET() {
@@ -26,7 +17,7 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!authorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (getAdminRole(request) !== "admin") return NextResponse.json({ error: "هذه الصلاحية للأدمن فقط" }, { status: 401 });
   const database = client();
   if (!database) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const form = await request.formData();

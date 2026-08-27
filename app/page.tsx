@@ -35,6 +35,7 @@ type Order = {
   order_items?: { id: number; name: string; quantity: number; category?: string }[];
 };
 type OrderStatus = "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
+type UserRole = "admin" | "staff";
 const orderStatuses: OrderStatus[] = ["قيد التنفيذ", "تم", "لم يرد", "غير متاح", "طلب مرفوض"];
 type SiteSettings = {
   id?: number;
@@ -79,8 +80,10 @@ export default function Home() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState("");
   const [adminPin, setAdminPin] = useState("");
+  const [loginRole, setLoginRole] = useState<UserRole>("admin");
   const [adminError, setAdminError] = useState("");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [menuItems, setMenuItems] = useState<Item[]>([]);
   const [adminTab, setAdminTab] = useState<"orders" | "menu" | "settings">(
     "orders",
@@ -132,7 +135,7 @@ export default function Home() {
 
   useEffect(() => {
     fetch("/api/admin/session")
-      .then((response) => setAdminAuthenticated(response.ok))
+      .then(async (response) => { const data = await response.json().catch(() => null); setAdminAuthenticated(response.ok); if (response.ok) setUserRole(data?.role || "admin"); })
       .catch(() => setAdminAuthenticated(false));
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -232,16 +235,19 @@ export default function Home() {
     const response = await fetch("/api/admin/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin: adminPin }),
+      body: JSON.stringify({ pin: adminPin, role: loginRole }),
     });
-    if (!response.ok) return setAdminError("الرقم السري غير صحيح");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setAdminError(result.error || "الرقم السري غير صحيح");
     setAdminAuthenticated(true);
+    setUserRole(result.role || loginRole);
     setAdminPin("");
   };
 
   const logoutAdmin = async () => {
     await fetch("/api/admin/session", { method: "DELETE" });
     setAdminAuthenticated(false);
+    setUserRole(null);
     setView("cashier");
   };
 
@@ -502,6 +508,7 @@ export default function Home() {
             <p className="mt-2 text-sm text-[#72807a]">
               أدخل الرقم السري للوصول إلى الطلبات.
             </p>
+            <div className="mt-6 grid grid-cols-2 gap-2"><button type="button" onClick={() => setLoginRole("admin")} className={`h-11 rounded-xl text-sm font-bold ${loginRole === "admin" ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#72807a]"}`}>أدمن</button><button type="button" onClick={() => setLoginRole("staff")} className={`h-11 rounded-xl text-sm font-bold ${loginRole === "staff" ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#72807a]"}`}>موظف</button></div>
             <input
               autoFocus
               type="password"
@@ -542,7 +549,7 @@ export default function Home() {
               </button>
             </div>
           </div>
-          <nav className="mb-6 flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
+          {userRole === "admin" && <nav className="mb-6 flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
             <button
               onClick={() => setAdminTab("orders")}
               className={`rounded-lg px-5 py-2.5 transition ${adminTab === "orders" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
@@ -561,8 +568,12 @@ export default function Home() {
             >
               إعدادات الصفحة
             </button>
-          </nav>
-          {adminTab === "settings" ? (
+          </nav>}
+          {userRole === "staff" ? (
+            <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
+              {filteredOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-4 border-b border-[#ededE7] px-5 py-5 last:border-0"><div><p className="font-display font-bold text-[#173f3a]">{order.id} <span className="mr-3 text-sm font-normal text-[#596963]">{order.phone}</span></p><p className="mt-1 text-sm text-[#596963]">{order.items}</p><small className="text-xs text-[#a1aaa3]">{formatOrderDate(order.created_at)}</small></div><select value={order.status} onChange={(event) => void updateOrderStatus(order.id, event.target.value as OrderStatus)} className="rounded-lg border-0 bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] outline-none">{orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></div>)}
+            </div>
+          ) : adminTab === "settings" ? (
             <SettingsManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "menu" ? (
             <ItemManager menuItems={menuItems} setMenuItems={setMenuItems} categories={categoryOptions} setCategories={setCategoryOptions} onSessionExpired={() => { setAdminAuthenticated(false); setView("admin"); }} />
