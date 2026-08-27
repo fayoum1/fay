@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -9,6 +9,7 @@ import {
   LogOut,
   Minus,
   Plus,
+  Radio,
   Search,
   ShoppingBag,
   Smartphone,
@@ -55,6 +56,7 @@ const defaultSettings: SiteSettings = {
   secondary_phone: "",
 };
 const defaultCategories: string[] = [];
+const QURAN_RADIO_URL = "https://stream.radiojar.com/8s5u5tpdtwzuv";
 
 function validImageUrl(value?: string) {
   if (!value || value === "null" || value === "undefined") return undefined;
@@ -95,6 +97,9 @@ export default function Home() {
   const [orderItem, setOrderItem] = useState("الكل");
   const [orderPeriod, setOrderPeriod] = useState("all");
   const [orderStatus, setOrderStatus] = useState("الكل");
+  const cartRef = useRef<HTMLElement>(null);
+  const radioRef = useRef<HTMLAudioElement>(null);
+  const [radioPlaying, setRadioPlaying] = useState(false);
 
   const filteredItems = menuItems.filter(
     (item) =>
@@ -112,6 +117,7 @@ export default function Home() {
     (sum, entry) => sum + entry.item.price * entry.quantity,
     0,
   );
+  const cartCount = cartItems.length;
   const categories = [
     "الكل",
     ...new Set(menuItems.map((item) => item.category)),
@@ -137,6 +143,10 @@ export default function Home() {
     fetch("/api/admin/session")
       .then(async (response) => { const data = await response.json().catch(() => null); setAdminAuthenticated(response.ok); if (response.ok) setUserRole(data?.role || "admin"); })
       .catch(() => setAdminAuthenticated(false));
+    const radio = radioRef.current;
+    if (radio) {
+      radio.play().then(() => setRadioPlaying(true)).catch(() => setRadioPlaying(false));
+    }
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const tomorrowStart = new Date(todayStart);
@@ -166,6 +176,22 @@ export default function Home() {
       .then((data) => { if (Array.isArray(data) && data.length) setCategoryOptions(data.map((category) => category.name)); })
       .catch(() => undefined);
   }, []);
+
+  const toggleRadio = async () => {
+    const radio = radioRef.current;
+    if (!radio) return;
+    if (radioPlaying) {
+      radio.pause();
+      setRadioPlaying(false);
+      return;
+    }
+    try {
+      await radio.play();
+      setRadioPlaying(true);
+    } catch {
+      setRadioPlaying(false);
+    }
+  };
 
   const updateQuantity = (id: number, delta: number) =>
     setCart((current) => ({
@@ -276,7 +302,7 @@ export default function Home() {
               <p className="text-[11px] text-[#72807a]">{settings.tagline}</p>
             </div>
           </div>
-          <nav className="flex rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
+          <nav className="hidden rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold lg:flex">
             <button
               onClick={() => setView("cashier")}
               className={`rounded-lg px-4 py-2 transition ${view === "cashier" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
@@ -290,6 +316,7 @@ export default function Home() {
               الأدمن
             </button>
           </nav>
+          <div className="hidden items-center gap-2 lg:flex"><div className="flex h-14 min-w-32 items-center justify-center gap-3 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-4 text-right"><p className="text-[11px] text-[#89918c]">طلبات اليوم</p><p className="font-display text-xl font-bold text-[#173f3a]">{todayOrdersCount}</p></div><button onClick={() => cartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="relative grid size-14 place-items-center rounded-xl bg-[#173f3a] text-white" aria-label="فتح السلة"><ShoppingBag size={18} />{cartCount > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#c48738] text-[10px] font-bold text-white">{cartCount}</span>}</button><button onClick={toggleRadio} className={`grid size-14 place-items-center rounded-xl border ${radioPlaying ? "border-[#c48738] bg-[#fff0d4] text-[#a66c20]" : "border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]"}`} aria-label={radioPlaying ? "إيقاف إذاعة القرآن الكريم" : "تشغيل إذاعة القرآن الكريم"} title="إذاعة القرآن الكريم من مصر"><Radio size={19} /></button></div>
           <div className="hidden items-center gap-2 text-xs text-[#72807a] sm:flex">
             <span className="size-2 rounded-full bg-[#5aa67d]" />{" "}
             {settings.branch} <span className="mx-1 text-[#c2c8c2]">|</span>{" "}
@@ -297,17 +324,11 @@ export default function Home() {
           </div>
         </div>
       </header>
+      <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-5 py-3 lg:hidden"><div className="mx-auto grid max-w-[1440px] grid-cols-2 items-center gap-2"><nav className="flex h-14 w-full rounded-xl bg-[#eef0ea] p-1 text-xs font-semibold"><button onClick={() => setView("cashier")} className={`flex-1 rounded-lg px-2 py-2 ${view === "cashier" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}>الكاشير</button><button onClick={openAdmin} className={`flex-1 rounded-lg px-2 py-2 ${view === "admin" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}>الأدمن</button></nav><div className="flex items-center justify-end gap-2"><div className="flex h-14 flex-1 items-center justify-center gap-2 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-2"><p className="text-[10px] text-[#89918c]">طلبات اليوم</p><p className="font-display text-lg font-bold text-[#173f3a]">{todayOrdersCount}</p></div><button onClick={() => cartRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })} className="relative grid size-14 shrink-0 place-items-center rounded-xl bg-[#173f3a] text-white" aria-label="فتح السلة"><ShoppingBag size={18} />{cartCount > 0 && <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#c48738] text-[10px] font-bold text-white">{cartCount}</span>}</button><button onClick={toggleRadio} className={`grid size-14 shrink-0 place-items-center rounded-xl border ${radioPlaying ? "border-[#c48738] bg-[#fff0d4] text-[#a66c20]" : "border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]"}`} aria-label={radioPlaying ? "إيقاف إذاعة القرآن الكريم" : "تشغيل إذاعة القرآن الكريم"} title="إذاعة القرآن الكريم من مصر"><Radio size={19} /></button></div></div></div>
+      <audio ref={radioRef} src={QURAN_RADIO_URL} autoPlay loop preload="none" onPlay={() => setRadioPlaying(true)} onPause={() => setRadioPlaying(false)} aria-label="إذاعة القرآن الكريم من مصر" />
       {view === "cashier" ? (
         <div className="mx-auto grid max-w-[1440px] gap-8 px-5 py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section>
-            <div className="mb-8 flex justify-end">
-              <div className="w-full rounded-2xl border border-[#e2e1d8] bg-[#fffdf8] px-4 py-3 text-right sm:w-auto">
-                <p className="text-[11px] text-[#89918c]">طلبات اليوم</p>
-                <p className="font-display text-2xl font-bold text-[#173f3a]">
-                  {todayOrdersCount}
-                </p>
-              </div>
-            </div>
             <div className="mb-6 flex flex-col gap-3 sm:flex-row">
               <div className="relative flex-1">
                 <Search
@@ -375,7 +396,7 @@ export default function Home() {
               ))}
             </div>
           </section>
-          <aside className="h-fit rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5 shadow-[0_12px_40px_#173f3a08] lg:sticky lg:top-6">
+          <aside ref={cartRef} className="h-fit rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5 shadow-[0_12px_40px_#173f3a08] lg:sticky lg:top-6">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="grid size-10 place-items-center rounded-xl bg-[#f4e7c9] text-[#c48738]">
