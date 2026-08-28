@@ -51,6 +51,7 @@
 
 body {
   font-family: var(--font-geist-sans), sans-serif;
+  overflow-x: hidden;
 }
 
 .font-display { font-family: var(--font-geist-sans), sans-serif; }
@@ -62,6 +63,148 @@ body {
   background-repeat: no-repeat;
   background-size: 1rem;
   padding-left: 2.75rem;
+}
+
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible !important;
+  }
+
+  .print-sheet {
+    position: absolute;
+    inset: 0;
+    display: block;
+    color: #202a27;
+    font-family: Arial, sans-serif;
+  }
+
+  .print-sheet-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 2px solid #173f3a;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+  }
+
+  .print-sheet h1 {
+    margin: 0;
+    color: #173f3a;
+    font-size: 22px;
+  }
+
+  .print-sheet p,
+  .print-sheet-meta {
+    margin: 4px 0 0;
+    color: #596963;
+    font-size: 11px;
+  }
+
+  .print-sheet h2 {
+    margin: 18px 0 8px;
+    color: #173f3a;
+    font-size: 15px;
+  }
+
+  .print-target-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .print-target-summary div {
+    border: 1px solid #d9ded8;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .print-target-summary strong,
+  .print-target-summary span {
+    display: block;
+  }
+
+  .print-target-summary strong {
+    color: #596963;
+    font-size: 10px;
+  }
+
+  .print-target-summary span {
+    margin-top: 5px;
+    color: #173f3a;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .print-sheet-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: left;
+  }
+
+  .print-sheet table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 11px;
+  }
+
+  .print-sheet th,
+  .print-sheet td {
+    border: 1px solid #d9ded8;
+    padding: 8px 6px;
+    text-align: right;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    font-weight: 700;
+  }
+
+  .print-sheet th {
+    background: #edf1eb;
+    color: #173f3a;
+    font-weight: 700;
+  }
+
+  .print-sheet tr {
+    break-inside: avoid;
+  }
+
+  .print-number {
+    direction: ltr;
+    text-align: right !important;
+    font-weight: 700;
+  }
+
+  .print-col-half {
+    width: 7%;
+  }
+
+  .print-col-quarter-less {
+    width: 10.5%;
+  }
+
+  .print-col-70-less {
+    width: 4.3%;
+  }
 }
 
 :root {

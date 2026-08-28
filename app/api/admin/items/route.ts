@@ -31,7 +31,7 @@ async function itemData(request: NextRequest, client: ReturnType<typeof database
 }
 
 export async function POST(request: NextRequest) {
-  if (getAdminRole(request) !== "admin") return unauthorized();
+  if (await getAdminRole(request) !== "admin") return unauthorized();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
   let body;
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (getAdminRole(request) !== "admin") return unauthorized();
+  if (await getAdminRole(request) !== "admin") return unauthorized();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
   let body;
@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (getAdminRole(request) !== "admin") return unauthorized();
+  if (await getAdminRole(request) !== "admin") return unauthorized();
   const { id } = await request.json();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
