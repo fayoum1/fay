@@ -1112,19 +1112,17 @@ export default function Home() {
                   >
                     {!item.image_url && item.emoji}
                   </div>
-                  <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "flex min-w-0 flex-1 items-start justify-between gap-2 px-1 py-1"}>
-                    <div>
-                      <h2 className="text-base font-bold text-[#173f3a] sm:text-lg">{item.name}</h2>
-                    </div>
-                    <div className={`flex items-center gap-3 ${itemDisplayMode === "cards" ? "mt-3 justify-between" : "shrink-0"}`}>
+                  <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "min-w-0 flex-1 px-1 py-1"}>
+                    <h2 className="text-base font-bold leading-none text-[#173f3a] sm:text-lg">{item.name}</h2>
+                    <div className={`mt-0 flex flex-col gap-0 ${itemDisplayMode === "cards" ? "items-center" : "items-start"}`}>
                       <button
                         onClick={(event) => { event.stopPropagation(); updateQuantity(item.id, 1); }}
                         aria-label={`إضافة ${item.name} للسلة`}
-                        className="grid size-11 shrink-0 place-items-center rounded-full bg-[#173f3a] text-white shadow-sm transition hover:bg-[#285951]"
+                        className={`grid size-9 shrink-0 place-items-center rounded-full bg-[#173f3a] text-white shadow-sm transition hover:bg-[#285951] ${itemDisplayMode === "list" ? "self-end" : ""}`}
                       >
-                        <Plus size={21} strokeWidth={2.5} />
+                        <Plus size={17} strokeWidth={2.5} />
                       </button>
-                      <p className="text-left font-display text-lg font-extrabold text-[#c48738]">
+                      <p className="text-left font-display text-lg font-extrabold leading-none text-[#c48738]">
                         {item.price_mode === "market"
                           ? "سوق"
                           : item.price_mode === "exchange"
