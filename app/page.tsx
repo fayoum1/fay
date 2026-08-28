@@ -735,7 +735,7 @@ export default function Home() {
           {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#c48738] text-white sm:size-12" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
         </div>
       </header>
-      <div className="border-b border-[#dedfd8] bg-[#fbfaf7] px-3 py-2.5 lg:hidden">
+      <div className="sticky top-0 z-30 border-b border-[#dedfd8] bg-[#fbfaf7] px-3 py-2.5 lg:hidden">
         <div className="mx-auto grid max-w-[1440px] grid-cols-3 items-center gap-1.5 sm:gap-2">
           <nav className="flex h-14 w-full rounded-xl bg-[#eef0ea] p-1 text-xs font-semibold">
             <button
@@ -1079,7 +1079,7 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              <div className="min-w-0 w-full overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:thin] [touch-action:pan-x]">
+              <div className="sticky top-[78px] z-20 -mx-1 min-w-0 w-full border-b border-[#dedfd8] bg-[#f7f6f2] py-2 shadow-sm overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
                 <div className="flex w-max min-w-full flex-nowrap gap-2">
                 {categories.map((entry) => (
                   <button
