@@ -1098,7 +1098,7 @@ export default function Home() {
                 <article
                   key={item.id}
                   onClick={() => updateQuantity(item.id, 1)}
-                  className={`group relative rounded-2xl border bg-[#fffdf9] transition hover:shadow-lg hover:shadow-[#173f3a0d] ${itemDisplayMode === "cards" ? "p-3 hover:-translate-y-1" : "flex items-center gap-3 p-3"} ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
+                  className={`group relative min-w-0 max-w-full overflow-hidden rounded-2xl border bg-[#fffdf9] transition hover:shadow-lg hover:shadow-[#173f3a0d] ${itemDisplayMode === "cards" ? "p-3 hover:-translate-y-1" : "flex items-center gap-3 p-3"} ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
                 >
                   <div
                     role="img"
@@ -1114,7 +1114,7 @@ export default function Home() {
                   </div>
                   <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "min-w-0 flex-1 px-1 py-1"}>
                     <h2 className="text-base font-bold leading-none text-[#173f3a] sm:text-lg">{item.name}</h2>
-                    <div className={`mt-0 flex flex-col gap-0 ${itemDisplayMode === "cards" ? "items-center" : "items-start"}`}>
+                    <div className={`mt-0 min-w-0 max-w-full flex flex-col gap-0 ${itemDisplayMode === "cards" ? "items-center" : "items-start"}`}>
                       <button
                         onClick={(event) => { event.stopPropagation(); updateQuantity(item.id, 1); }}
                         aria-label={`إضافة ${item.name} للسلة`}
@@ -1122,7 +1122,7 @@ export default function Home() {
                       >
                         <Plus size={17} strokeWidth={2.5} />
                       </button>
-                      <p className="text-left font-display text-lg font-extrabold leading-none text-[#c48738]">
+                      <p className="max-w-full truncate text-left font-display text-lg font-extrabold leading-none text-[#c48738]">
                         {item.price_mode === "market"
                           ? "سوق"
                           : item.price_mode === "exchange"
