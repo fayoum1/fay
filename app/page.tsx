@@ -1029,8 +1029,8 @@ export default function Home() {
         />
       )}
       {view === "cashier" ? (
-        <div className="mx-auto grid min-w-0 max-w-[1440px] gap-5 px-3 py-5 sm:gap-8 sm:px-5 sm:py-8 lg:grid-cols-[1fr_380px] lg:px-10">
-          <section className="min-w-0">
+        <div className="mx-auto grid w-full min-w-0 max-w-[1440px] gap-5 overflow-x-hidden px-3 py-5 sm:gap-8 sm:px-5 sm:py-8 lg:grid-cols-[1fr_380px] lg:px-10">
+          <section className="min-w-0 max-w-full overflow-x-hidden">
             <div className="mb-6 flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 {showItemSearch ? (
@@ -1079,7 +1079,7 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              <div className="sticky top-[78px] z-20 -mx-1 min-w-0 w-full border-b border-[#dedfd8] bg-[#f7f6f2] py-2 shadow-sm overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
+              <div className="sticky top-[78px] z-20 -mx-1 min-w-0 w-full max-w-full border-b border-[#dedfd8] bg-[#f7f6f2] py-2 shadow-sm overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
                 <div className="flex w-max min-w-full flex-nowrap gap-2">
                 {categories.map((entry) => (
                   <button
