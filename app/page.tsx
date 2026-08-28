@@ -170,7 +170,7 @@ export default function Home() {
   const [showItemSearch, setShowItemSearch] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
   const [category, setCategory] = useState("الكل");
-  const [itemDisplayMode, setItemDisplayMode] = useState<"cards" | "list">("cards");
+  const [itemDisplayMode, setItemDisplayMode] = useState<"cards" | "list">("list");
   const [cart, setCart] = useState<Record<number, number>>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState("");
@@ -1093,7 +1093,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <div className={`${itemDisplayMode === "cards" ? "grid min-w-0 grid-cols-1 gap-3 min-[400px]:grid-cols-2 min-[400px]:gap-4 md:grid-cols-3" : "grid min-w-0 gap-3"} max-h-[1200px] overflow-y-auto overscroll-contain pr-1`}>
+            <div className={`${itemDisplayMode === "cards" ? "grid min-w-0 grid-cols-1 gap-3 min-[400px]:grid-cols-2 min-[400px]:gap-4 md:grid-cols-3" : "grid min-w-0 gap-3"} pr-1`}>
               {filteredItems.map((item) => (
                 <article
                   key={item.id}
@@ -1126,9 +1126,9 @@ export default function Home() {
                       </button>
                       <p className="text-left font-display text-lg font-extrabold text-[#c48738]">
                         {item.price_mode === "market"
-                          ? "حسب السوق"
+                          ? "سوق"
                           : item.price_mode === "exchange"
-                            ? "حسب البورصة"
+                            ? "بورصة"
                             : item.price_mode === "free"
                               ? "مجاني 100%"
                               : <>{item.price_mode === "discount" && <span className="ml-2 text-sm text-[#56816c]">خصم {item.discount_percent}%</span>}{getItemUnitPrice(item)}<span className="mr-1 text-xs font-bold text-[#8b948e]">جنيه</span></>}
@@ -1193,9 +1193,9 @@ export default function Home() {
                       </p>
                       <p className="text-sm font-bold text-[#c48738]">
                         {item.price_mode === "market"
-                          ? "حسب السوق"
+                          ? "سوق"
                           : item.price_mode === "exchange"
-                            ? "حسب البورصة"
+                            ? "بورصة"
                             : item.price_mode === "free"
                               ? "مجاني 100%"
                               : item.price_mode === "discount"
@@ -1906,8 +1906,8 @@ function ItemManager({
           className="select-with-arrow h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
         >
           <option value="fixed">سعر ثابت</option>
-          <option value="market">حسب السوق</option>
-          <option value="exchange">حسب البورصة</option>
+          <option value="market">سوق</option>
+          <option value="exchange">بورصة</option>
           <option value="free">مجاني 100%</option>
           <option value="discount">عليه خصم</option>
         </select>
@@ -2029,9 +2029,9 @@ function ItemManager({
               <p className="text-xs text-[#89918c]">
                 {item.category} <span className="mx-1">•</span>
                 {item.price_mode === "market"
-                  ? "حسب السوق"
+                  ? "سوق"
                   : item.price_mode === "exchange"
-                    ? "حسب البورصة"
+                    ? "بورصة"
                     : item.price_mode === "free"
                       ? "مجاني 100%"
                       : item.price_mode === "discount"
