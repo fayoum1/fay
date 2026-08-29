@@ -1748,6 +1748,13 @@ function ItemManager({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [message, setMessage] = useState("");
   const [newCategory, setNewCategory] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
+  const [itemCategory, setItemCategory] = useState("الكل");
+  const filteredMenuItems = menuItems.filter(
+    (item) =>
+      (itemCategory === "الكل" || item.category === itemCategory) &&
+      item.name.toLocaleLowerCase("ar").includes(itemSearch.trim().toLocaleLowerCase("ar")),
+  );
 
   const addCategory = async () => {
     const name = newCategory.trim();
@@ -2043,8 +2050,35 @@ function ItemManager({
           ))}
         </div>
       )}
+      <div className="mb-3 rounded-xl border border-[#e9e9e2] bg-[#fbfbf8] p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-bold text-[#173f3a]">فلترة الأصناف</p>
+          <span className="text-xs text-[#89918c]">{filteredMenuItems.length} نتيجة</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#89918c]" size={16} />
+            <input
+              value={itemSearch}
+              onChange={(event) => setItemSearch(event.target.value)}
+              placeholder="ابحث باسم الصنف"
+              className="h-10 w-full rounded-lg border border-[#dedfd8] bg-white py-2 pl-3 pr-9 text-sm outline-none focus:border-[#173f3a]"
+            />
+          </div>
+          <select
+            value={itemCategory}
+            onChange={(event) => setItemCategory(event.target.value)}
+            className="select-with-arrow h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+          >
+            <option value="الكل">كل الفئات</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+        </div>
+      </div>
       <div className="grid gap-2">
-        {menuItems.map((item) => (
+        {filteredMenuItems.map((item) => (
           <div
             key={item.id}
             className="flex items-center gap-3 rounded-xl border border-[#ecece5] px-3 py-2"
@@ -2088,6 +2122,11 @@ function ItemManager({
             </button>
           </div>
         ))}
+        {!filteredMenuItems.length && (
+          <p className="rounded-xl border border-dashed border-[#dedfd8] px-3 py-6 text-center text-sm text-[#89918c]">
+            لا توجد أصناف مطابقة للفلتر.
+          </p>
+        )}
       </div>
     </section>
   );
