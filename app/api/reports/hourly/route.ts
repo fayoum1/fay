@@ -78,8 +78,11 @@ export async function GET(request: NextRequest) {
     district: order.district,
     items: Array.isArray(order.items)
       ? order.items.map((item) => {
-          const entry = item as { name?: unknown; quantity?: unknown };
-          return `${String(entry.name || "صنف")} x ${Number(entry.quantity) || 1}`;
+          const entry = item as { name?: unknown; age_or_weight?: unknown; quantity?: unknown };
+          const ageOrWeight = typeof entry.age_or_weight === "string" && entry.age_or_weight.trim()
+            ? ` (${entry.age_or_weight})`
+            : "";
+          return `${String(entry.name || "صنف")}${ageOrWeight} x ${Number(entry.quantity) || 1}`;
         })
       : [],
     total: Number(order.total) || 0,

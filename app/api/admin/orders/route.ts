@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const database = createClient(url, key, { auth: { persistSession: false } });
   const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json((data || []).map((order) => ({ ...order, id: `#${order.id}`, order_items: Array.isArray(order.items) ? order.items : [], items: Array.isArray(order.items) ? order.items.map((item: { name: string; quantity: number }) => `${item.name} × ${item.quantity}`).join("، ") : String(order.items) })));
+  return NextResponse.json((data || []).map((order) => ({ ...order, id: `#${order.id}`, order_items: Array.isArray(order.items) ? order.items : [], items: Array.isArray(order.items) ? order.items.map((item: { name: string; age_or_weight?: string | null; quantity: number }) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${item.quantity}`).join("، ") : String(order.items) })));
 }
 
 export async function PATCH(request: NextRequest) {

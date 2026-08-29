@@ -480,7 +480,7 @@ export default function Home() {
       return setNotice("اكتب اسم محافظتك أولاً");
     if (!cartItems.length) return setNotice("أضف صنفاً واحداً على الأقل للسلة");
     const orderItems = cartItems
-      .map(({ item, quantity }) => `${item.name} × ${quantity}`)
+      .map(({ item, quantity }) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${quantity}`)
       .join("، ");
     const response = await fetch("/api/orders", {
       method: "POST",
@@ -494,6 +494,7 @@ export default function Home() {
           id: item.id,
           name: item.name,
           category: item.category,
+          age_or_weight: item.age_or_weight || null,
           quantity,
           price: item.price,
           final_price: getItemUnitPrice(item),
