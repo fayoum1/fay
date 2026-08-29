@@ -11,7 +11,7 @@ function client() {
 export async function GET() {
   const database = client();
   if (!database) return NextResponse.json(null, { status: 204 });
-  const { data, error } = await database.from("site_settings").select("id, name, tagline, branch, phone, secondary_phone, logo_url, staff_name, marketing_url, milestone_count, milestone_reward").eq("id", 1).maybeSingle();
+  const { data, error } = await database.from("site_settings").select("id, name, tagline, branch, phone, secondary_phone, logo_url, staff_name, marketing_url, facebook_url, instagram_url, whatsapp_url, visitor_message, milestone_count, milestone_reward").eq("id", 1).maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const { data: rateHistory } = await database.from("reward_rate_history").select("*").order("effective_from", { ascending: true });
   return NextResponse.json({ ...data, reward_rate_history: rateHistory || [] });
@@ -25,8 +25,13 @@ export async function PATCH(request: NextRequest) {
   const milestoneCount = Number(form.get("milestone_count"));
   const milestoneReward = Number(form.get("milestone_reward"));
   const marketingUrl = String(form.get("marketing_url") || "").trim();
+  const facebookUrl = String(form.get("facebook_url") || "").trim();
+  const instagramUrl = String(form.get("instagram_url") || "").trim();
+  const whatsappUrl = String(form.get("whatsapp_url") || "").trim();
+  const visitorMessage = String(form.get("visitor_message") || "").trim().slice(0, 200);
   if (marketingUrl && !(/^\//.test(marketingUrl) || /^https?:\/\//i.test(marketingUrl))) return NextResponse.json({ error: "رابط التسويق غير صالح" }, { status: 400 });
-  const values = { name: String(form.get("name") || "الفيوم للأعلاف والدواجن"), tagline: String(form.get("tagline") || "نظام الطلبات"), branch: String(form.get("branch") || "الفرع الرئيسي"), phone: String(form.get("phone") || ""), secondary_phone: String(form.get("secondary_phone") || ""), staff_name: String(form.get("staff_name") || "").trim(), marketing_url: marketingUrl, milestone_count: Number.isFinite(milestoneCount) && milestoneCount > 0 ? milestoneCount : 1, milestone_reward: Number.isFinite(milestoneReward) && milestoneReward >= 0 ? milestoneReward : 1 };
+  if ([facebookUrl, instagramUrl, whatsappUrl].some((value) => value && !/^https?:\/\//i.test(value))) return NextResponse.json({ error: "روابط التواصل يجب أن تبدأ بـ https://" }, { status: 400 });
+  const values = { name: String(form.get("name") || "الفيوم للأعلاف والدواجن"), tagline: String(form.get("tagline") || "نظام الطلبات"), branch: String(form.get("branch") || "الفرع الرئيسي"), phone: String(form.get("phone") || ""), secondary_phone: String(form.get("secondary_phone") || ""), staff_name: String(form.get("staff_name") || "").trim(), marketing_url: marketingUrl, facebook_url: facebookUrl, instagram_url: instagramUrl, whatsapp_url: whatsappUrl, visitor_message: visitorMessage, milestone_count: Number.isFinite(milestoneCount) && milestoneCount > 0 ? milestoneCount : 1, milestone_reward: Number.isFinite(milestoneReward) && milestoneReward >= 0 ? milestoneReward : 1 };
   const adminPassword = String(form.get("admin_password") || "").trim();
   const staffPassword = String(form.get("staff_password") || "").trim();
   if ((adminPassword && adminPassword.length < 4) || (staffPassword && staffPassword.length < 4)) return NextResponse.json({ error: "كلمة السر يجب أن تكون 4 أحرف أو أرقام على الأقل" }, { status: 400 });
@@ -45,7 +50,7 @@ export async function PATCH(request: NextRequest) {
     await database.from("reward_rate_history").insert({ milestone_count: previous?.milestone_count ?? values.milestone_count, milestone_reward: previous?.milestone_reward ?? values.milestone_reward, effective_from: "2000-01-01T00:00:00Z" });
   }
   const passwords = { ...(adminPassword ? { admin_password_hash: hashPassword(adminPassword) } : {}), ...(staffPassword ? { staff_password_hash: hashPassword(staffPassword) } : {}) };
-  const { data, error } = await database.from("site_settings").upsert({ id: 1, ...values, ...passwords, logo_url }, { onConflict: "id" }).select("id, name, tagline, branch, phone, secondary_phone, logo_url, staff_name, marketing_url, milestone_count, milestone_reward").single();
+  const { data, error } = await database.from("site_settings").upsert({ id: 1, ...values, ...passwords, logo_url }, { onConflict: "id" }).select("id, name, tagline, branch, phone, secondary_phone, logo_url, staff_name, marketing_url, facebook_url, instagram_url, whatsapp_url, visitor_message, milestone_count, milestone_reward").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   if (previous && (previous.milestone_count !== values.milestone_count || previous.milestone_reward !== values.milestone_reward)) {
     await database.from("reward_rate_history").insert({ milestone_count: values.milestone_count, milestone_reward: values.milestone_reward, effective_from: new Date().toISOString() });

@@ -44,6 +44,10 @@ create table if not exists public.site_settings (
   logo_url text,
   staff_name text not null default '',
   marketing_url text not null default '',
+  facebook_url text not null default '',
+  instagram_url text not null default '',
+  whatsapp_url text not null default '',
+  visitor_message text not null default '',
   visitor_count integer not null default 0,
   admin_password_hash text,
   staff_password_hash text,
@@ -56,6 +60,10 @@ alter table public.site_settings add column if not exists milestone_count intege
 alter table public.site_settings add column if not exists milestone_reward numeric(10, 2) not null default 1;
 alter table public.site_settings add column if not exists staff_name text not null default '';
 alter table public.site_settings add column if not exists marketing_url text not null default '';
+alter table public.site_settings add column if not exists facebook_url text not null default '';
+alter table public.site_settings add column if not exists instagram_url text not null default '';
+alter table public.site_settings add column if not exists whatsapp_url text not null default '';
+alter table public.site_settings add column if not exists visitor_message text not null default '';
 alter table public.site_settings add column if not exists visitor_count integer not null default 0;
 alter table public.site_settings add column if not exists admin_password_hash text;
 alter table public.site_settings add column if not exists staff_password_hash text;

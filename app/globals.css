@@ -65,6 +65,23 @@ body {
   padding-left: 2.75rem;
 }
 
+.visitor-message-ticker {
+  min-width: 100%;
+  animation: visitor-message-left-to-right 12s linear infinite;
+}
+
+@keyframes visitor-message-left-to-right {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visitor-message-ticker {
+    animation: none;
+    justify-content: center;
+  }
+}
+
 .print-sheet {
   display: none;
 }

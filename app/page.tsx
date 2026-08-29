@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa6";
 import {
   Check,
   Coffee,
@@ -77,6 +78,10 @@ type SiteSettings = {
   phone: string;
   secondary_phone: string;
   marketing_url: string;
+  facebook_url: string;
+  instagram_url: string;
+  whatsapp_url: string;
+  visitor_message: string;
   logo_url?: string;
   staff_name: string;
   milestone_count: number;
@@ -91,6 +96,10 @@ const defaultSettings: SiteSettings = {
   phone: "",
   secondary_phone: "",
   marketing_url: "",
+  facebook_url: "",
+  instagram_url: "",
+  whatsapp_url: "",
+  visitor_message: "",
   staff_name: "",
   milestone_count: 1,
   milestone_reward: 1,
@@ -1070,18 +1079,44 @@ export default function Home() {
                     onClick={() => setShowItemSearch(true)}
                     aria-label="فتح البحث عن صنف"
                     title="بحث عن صنف"
-                    className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#dedfd8] bg-white text-[#72807a] transition hover:border-[#173f3a] hover:text-[#173f3a]"
+                    className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#dedfd8] bg-white text-[#72807a] transition hover:border-[#173f3a] hover:text-[#173f3a] max-[359px]:hidden"
                   >
                     <Search size={19} />
                   </button>
                 )}
-                <div className="flex shrink-0 items-center rounded-xl border border-[#dedfd8] bg-white p-1">
+                {!showItemSearch && settings.visitor_message && (
+                  <div className="h-12 min-w-0 flex-1 overflow-hidden rounded-xl border border-[#dedfd8] bg-white text-[#173f3a]" aria-label="رسالة للزوار">
+                    <div className="visitor-message-ticker flex h-full w-max items-center whitespace-nowrap px-4 text-sm font-bold">
+                      {settings.visitor_message}
+                    </div>
+                  </div>
+                )}
+                {!showItemSearch && (settings.facebook_url || settings.instagram_url || settings.whatsapp_url) && (
+                  <div className="flex shrink-0 items-center gap-1">
+                    {settings.facebook_url && (
+                      <a href={settings.facebook_url} target="_blank" rel="noreferrer" aria-label="فيسبوك" title="فيسبوك" className="grid size-9 place-items-center rounded-lg bg-[#1877f2] text-white transition hover:opacity-85 max-[359px]:size-7">
+                        <FaFacebookF size={17} />
+                      </a>
+                    )}
+                    {settings.instagram_url && (
+                      <a href={settings.instagram_url} target="_blank" rel="noreferrer" aria-label="إنستجرام" title="إنستجرام" className="grid size-9 place-items-center rounded-lg bg-[#c13584] text-white transition hover:opacity-85 max-[359px]:size-7">
+                        <FaInstagram size={18} />
+                      </a>
+                    )}
+                    {settings.whatsapp_url && (
+                      <a href={settings.whatsapp_url} target="_blank" rel="noreferrer" aria-label="واتساب" title="واتساب" className="grid size-9 place-items-center rounded-lg bg-[#25a866] text-white transition hover:opacity-85 max-[359px]:size-7">
+                        <FaWhatsapp size={19} />
+                      </a>
+                    )}
+                  </div>
+                )}
+                <div className="flex shrink-0 items-center rounded-xl border border-[#dedfd8] bg-white p-1 max-[359px]:p-0.5">
                   <button
                     type="button"
                     onClick={() => setItemDisplayMode("cards")}
                     aria-label="عرض الأصناف كبطاقات"
                     title="عرض البطاقات"
-                    className={`grid size-9 place-items-center rounded-lg transition ${itemDisplayMode === "cards" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
+                    className={`grid size-9 place-items-center rounded-lg transition max-[359px]:size-7 ${itemDisplayMode === "cards" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
                   >
                     <Grid2X2 size={17} />
                   </button>
@@ -1090,7 +1125,7 @@ export default function Home() {
                     onClick={() => setItemDisplayMode("list")}
                     aria-label="عرض الأصناف كقائمة"
                     title="عرض القائمة"
-                    className={`grid size-9 place-items-center rounded-lg transition ${itemDisplayMode === "list" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
+                    className={`grid size-9 place-items-center rounded-lg transition max-[359px]:size-7 ${itemDisplayMode === "list" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
                   >
                     <List size={18} />
                   </button>
@@ -2250,43 +2285,76 @@ function MarketingManager({
   settings: SiteSettings;
   setSettings: (settings: SiteSettings) => void;
 }) {
-  const [url, setUrl] = useState(settings.marketing_url);
+  const [draft, setDraft] = useState({
+    marketingUrl: settings.marketing_url,
+    facebookUrl: settings.facebook_url,
+    instagramUrl: settings.instagram_url,
+    whatsappUrl: settings.whatsapp_url,
+    visitorMessage: settings.visitor_message,
+  });
   const [message, setMessage] = useState("");
 
   const save = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const value = url.trim();
-    if (value && !(/^\//.test(value) || /^https?:\/\//i.test(value))) {
+    const marketingUrl = draft.marketingUrl.trim();
+    const socialUrls = [draft.facebookUrl, draft.instagramUrl, draft.whatsappUrl].map((value) => value.trim());
+    if (marketingUrl && !(/^\//.test(marketingUrl) || /^https?:\/\//i.test(marketingUrl))) {
       return setMessage("اكتب مسارًا يبدأ بـ / أو رابطًا يبدأ بـ https://");
+    }
+    if (socialUrls.some((value) => value && !/^https?:\/\//i.test(value))) {
+      return setMessage("روابط التواصل يجب أن تبدأ بـ https://");
     }
     const formData = new FormData();
     Object.entries(settings).forEach(([key, currentValue]) => {
       if (key !== "reward_rate_history" && currentValue !== undefined)
         formData.append(key, String(currentValue));
     });
-    formData.set("marketing_url", value);
+    formData.set("marketing_url", marketingUrl);
+    formData.set("facebook_url", socialUrls[0]);
+    formData.set("instagram_url", socialUrls[1]);
+    formData.set("whatsapp_url", socialUrls[2]);
+    formData.set("visitor_message", draft.visitorMessage.trim());
     const response = await fetch("/api/settings", { method: "PATCH", body: formData });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) return setMessage(result.error || "تعذر حفظ رابط التسويق");
+    if (!response.ok) return setMessage(result.error || "تعذر حفظ إعدادات التسويق");
     setSettings(result);
-    setUrl(result.marketing_url || "");
-    setMessage("تم حفظ رابط التسويق");
+    setDraft({
+      marketingUrl: result.marketing_url || "",
+      facebookUrl: result.facebook_url || "",
+      instagramUrl: result.instagram_url || "",
+      whatsappUrl: result.whatsapp_url || "",
+      visitorMessage: result.visitor_message || "",
+    });
+    setMessage("تم حفظ إعدادات التسويق");
   };
 
   return (
     <section className="max-w-3xl rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
-      <p className="text-sm font-semibold text-[#c48738]">رابط زر تابع الجديد</p>
+      <p className="text-sm font-semibold text-[#c48738]">روابط التواصل ورسالة الزوار</p>
       <h2 className="font-display text-2xl font-bold text-[#173f3a]">إدارة التسويق</h2>
-      <p className="mt-1 text-sm text-[#72807a]">ضع مسار الصفحة أو الرابط الذي سيفتحه العميل بعد تسجيل الحجز.</p>
-      <form onSubmit={save} className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
-        <input
-          value={url}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="مثال: /offers أو https://example.com"
-          dir="ltr"
-          className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-left outline-none focus:border-[#173f3a]"
-        />
-        <button className="h-11 rounded-xl bg-[#173f3a] px-5 font-bold text-white">حفظ الرابط</button>
+      <p className="mt-1 text-sm text-[#72807a]">لن تظهر أيقونة التواصل للزوار إلا بعد إضافة رابطها.</p>
+      <form onSubmit={save} className="mt-5 grid gap-4">
+        <label className="grid gap-1.5 text-sm font-bold text-[#173f3a]">
+          رابط فيسبوك
+          <input value={draft.facebookUrl} onChange={(event) => setDraft({ ...draft, facebookUrl: event.target.value })} placeholder="https://facebook.com/..." dir="ltr" className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-left font-normal outline-none focus:border-[#173f3a]" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-bold text-[#173f3a]">
+          رابط إنستجرام
+          <input value={draft.instagramUrl} onChange={(event) => setDraft({ ...draft, instagramUrl: event.target.value })} placeholder="https://instagram.com/..." dir="ltr" className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-left font-normal outline-none focus:border-[#173f3a]" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-bold text-[#173f3a]">
+          رابط واتساب
+          <input value={draft.whatsappUrl} onChange={(event) => setDraft({ ...draft, whatsappUrl: event.target.value })} placeholder="https://wa.me/201..." dir="ltr" className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-left font-normal outline-none focus:border-[#173f3a]" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-bold text-[#173f3a]">
+          رسالة الزوار المتحركة
+          <input maxLength={200} value={draft.visitorMessage} onChange={(event) => setDraft({ ...draft, visitorMessage: event.target.value })} placeholder="اكتب الرسالة التي ستظهر بجوار أزرار العرض" className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 font-normal outline-none focus:border-[#173f3a]" />
+        </label>
+        <label className="grid gap-1.5 text-sm font-bold text-[#173f3a]">
+          رابط زر تابع الجديد بعد الحجز
+          <input value={draft.marketingUrl} onChange={(event) => setDraft({ ...draft, marketingUrl: event.target.value })} placeholder="مثال: /offers أو https://example.com" dir="ltr" className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-left font-normal outline-none focus:border-[#173f3a]" />
+        </label>
+        <button className="h-11 rounded-xl bg-[#173f3a] px-5 font-bold text-white">حفظ إعدادات التسويق</button>
       </form>
       {message && <p className="mt-4 text-center text-sm font-semibold text-[#56816c]">{message}</p>}
     </section>
