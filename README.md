@@ -38,6 +38,79 @@ npm run dev
 
 ارفع المشروع إلى GitHub، ثم اختر المستودع من Vercel. أضف متغيري البيئة نفسهما في Project Settings > Environment Variables، وبعدها اضغط Deploy.
 
+## نسخة احتياطية يومية في Google Sheets
+
+يستطيع Google Apps Script نسخ الحجوزات الجديدة إلى Google Sheet مجانًا باستخدام Route التقرير المحمي و`REPORT_SECRET`. أضف هذا الكود إلى مشروع Apps Script بعد ضبط `SITE_URL` و`REPORT_SECRET` الموجودين فيه، ثم ضع معرّف الجدول في `SPREADSHEET_ID`:
+
+```javascript
+const SPREADSHEET_ID = "ضع_معرف_جدول_Google_Sheet_هنا";
+
+function backupDailyBookingsToSheet() {
+	const properties = PropertiesService.getScriptProperties();
+	const endTime = new Date();
+	const previousTime = properties.getProperty("lastSheetBackupAt");
+	const startTime = previousTime
+		? new Date(previousTime)
+		: new Date(endTime.getTime() - 24 * 60 * 60 * 1000);
+
+	const requestUrl =
+		`${SITE_URL}/api/reports/hourly?from=${encodeURIComponent(startTime.toISOString())}` +
+		`&to=${encodeURIComponent(endTime.toISOString())}`;
+	const response = UrlFetchApp.fetch(requestUrl, {
+		headers: { "x-report-secret": REPORT_SECRET },
+		muteHttpExceptions: true,
+	});
+
+	if (response.getResponseCode() !== 200) {
+		throw new Error(response.getContentText());
+	}
+
+	const report = JSON.parse(response.getContentText());
+	const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+	const sheet = spreadsheet.getSheetByName("الحجوزات") || spreadsheet.insertSheet("الحجوزات");
+
+	if (sheet.getLastRow() === 0) {
+		sheet.appendRow([
+			"رقم الحجز",
+			"اسم العميل",
+			"الهاتف",
+			"المحافظة",
+			"المركز / المدينة",
+			"الأصناف",
+			"الإجمالي",
+			"الحالة",
+			"وقت الحجز",
+			"وقت آخر تعديل",
+			"الموظف",
+		]);
+		sheet.setFrozenRows(1);
+	}
+
+	const rows = report.newBookingDetails.map((order) => [
+		order.id,
+		order.customerName,
+		order.phone,
+		order.governorate,
+		order.district || "",
+		order.items.join("، "),
+		order.total,
+		order.status,
+		new Date(order.createdAt),
+		new Date(order.statusChangedAt),
+		order.staffName || "",
+	]);
+
+	if (rows.length) {
+		sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+		sheet.getRange(2, 9, sheet.getLastRow() - 1, 2).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+	}
+
+	properties.setProperty("lastSheetBackupAt", endTime.toISOString());
+}
+```
+
+أنشئ Trigger للدالة `backupDailyBookingsToSheet` من النوع `Time-driven` ثم `Day timer`. لا تستخدم مفتاح `lastReportAt` الخاص بتقرير البريد؛ النسخ الاحتياطي يستخدم `lastSheetBackupAt` مستقلًا كي لا تتداخل المهمتان.
+
 ## أوامر التحقق
 
 ```bash

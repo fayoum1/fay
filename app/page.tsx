@@ -1519,6 +1519,9 @@ export default function Home() {
                   </span>
                   <span className="text-lg font-bold tabular-nums text-[#596963]">
                     {order.phone}
+                    {order.customer_name && (
+                      <small className="block text-sm font-semibold text-[#56816c]">{order.customer_name}</small>
+                    )}
                   </span>
                   <span className="text-base font-semibold leading-7 text-[#596963]">
                     {order.items}
@@ -1657,6 +1660,9 @@ export default function Home() {
                     </span>
                     <span className="text-lg font-bold tabular-nums text-[#596963]">
                       {order.phone}
+                      {order.customer_name && (
+                        <small className="block text-sm font-semibold text-[#56816c]">{order.customer_name}</small>
+                      )}
                     </span>
                     <span className="text-base font-semibold leading-7 text-[#596963]">
                       {order.items}
