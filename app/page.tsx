@@ -1530,7 +1530,62 @@ export default function Home() {
           ) : adminTab === "targets" && userRole === "staff" ? (
             <MyTargetCard orders={orders} settings={settings} staffName={staffName} />
           ) : userRole === "staff" ? (
-            <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
+            <>
+              <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-display text-lg font-bold text-[#173f3a]">
+                    فلترة الطلبات
+                  </h2>
+                  <span className="text-xs text-[#89918c]">
+                    {filteredOrders.length} نتيجة
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <select
+                    value={orderCategory}
+                    onChange={(event) => setOrderCategory(event.target.value)}
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل الفئات</option>
+                    {categoryOptions.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={orderItem}
+                    onChange={(event) => setOrderItem(event.target.value)}
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل الأصناف</option>
+                    {orderItems.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={orderPeriod}
+                    onChange={(event) => setOrderPeriod(event.target.value)}
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="all">كل الفترات</option>
+                    <option value="today">اليوم</option>
+                    <option value="yesterday">أمس</option>
+                    <option value="week">هذا الأسبوع</option>
+                    <option value="month">هذا الشهر</option>
+                    <option value="90days">آخر 90 يوم</option>
+                  </select>
+                  <select
+                    value={orderStatus}
+                    onChange={(event) => setOrderStatus(event.target.value)}
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل الحالات</option>
+                    {orderStatuses.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
               <div className="hidden grid-cols-[100px_160px_1fr_100px_130px] gap-4 border-b border-[#e7e7df] bg-[#f7f7f2] px-5 py-4 text-xs font-bold text-[#89918c] sm:grid">
                 <span>الطلب</span>
                 <span>رقم الهاتف</span>
@@ -1594,7 +1649,8 @@ export default function Home() {
                   )}
                 </div>
               ))}
-            </div>
+              </div>
+            </>
           ) : adminTab === "settings" ? (
             <SettingsManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "menu" ? (
