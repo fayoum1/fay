@@ -1512,7 +1512,9 @@ export default function Home() {
             </div>
           </div>
           <div className="mb-6 flex flex-wrap items-center gap-3">
-            <nav className="flex w-fit rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold">
+            <nav className="w-full shrink-0 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin] [touch-action:pan-x] sm:w-auto sm:overflow-visible sm:pb-0">
+              <div className="flex w-max flex-nowrap items-center gap-3">
+              <div className="flex flex-nowrap rounded-xl bg-[#eef0ea] p-1 text-sm font-semibold [&>button]:shrink-0 [&>button]:whitespace-nowrap">
               <button
                 onClick={() => setAdminTab("orders")}
                 className={`rounded-lg px-5 py-2.5 transition ${adminTab === "orders" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
@@ -1561,17 +1563,19 @@ export default function Home() {
                   </button>
                 </>
               )}
+              </div>
+              {userRole === "admin" && adminTab === "orders" && (
+                <button
+                  type="button"
+                  onClick={printOrders}
+                  className="no-print flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[#173f3a] px-4 text-sm font-bold text-white transition hover:bg-[#25534d]"
+                  title="طباعة الطلبات أو حفظها PDF"
+                >
+                  <Printer size={17} /> طباعة / PDF
+                </button>
+              )}
+              </div>
             </nav>
-            {userRole === "admin" && adminTab === "orders" && (
-              <button
-                type="button"
-                onClick={printOrders}
-                className="no-print flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#173f3a] px-4 text-sm font-bold text-white transition hover:bg-[#25534d] sm:w-fit"
-                title="طباعة الطلبات أو حفظها PDF"
-              >
-                <Printer size={17} /> طباعة / PDF
-              </button>
-            )}
             {adminTab !== "targets" && (
               <div className="relative w-full sm:w-64">
                 <Search
