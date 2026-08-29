@@ -6,6 +6,7 @@ create table if not exists public.items (
   price_mode text not null default 'fixed' check (price_mode in ('fixed', 'market', 'exchange', 'free', 'discount')),
   discount_percent numeric(5, 2) not null default 0 check (discount_percent >= 0 and discount_percent <= 100),
   emoji text not null default '☕',
+  age_or_weight text,
   image_url text,
   active boolean not null default true,
   created_at timestamptz not null default now(),
@@ -13,6 +14,7 @@ create table if not exists public.items (
 );
 
 alter table public.items add column if not exists image_url text;
+alter table public.items add column if not exists age_or_weight text;
 alter table public.items add column if not exists updated_at timestamptz not null default now();
 alter table public.items add column if not exists price_mode text not null default 'fixed';
 alter table public.items add column if not exists discount_percent numeric(5, 2) not null default 0;

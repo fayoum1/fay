@@ -27,6 +27,7 @@ type Item = {
   price: number;
   price_mode?: "fixed" | "market" | "exchange" | "free" | "discount";
   discount_percent?: number;
+  age_or_weight?: string;
   emoji: string;
   color: string;
   image_url?: string;
@@ -1120,6 +1121,9 @@ export default function Home() {
                   </div>
                   <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "min-w-0 flex-1 px-1 py-1"}>
                     <h2 className="text-base font-bold leading-none text-[#173f3a] sm:text-lg">{item.name}</h2>
+                    {itemDisplayMode === "list" && item.age_or_weight && (
+                      <p className="mt-1 text-xs font-semibold text-[#56816c]">{item.age_or_weight}</p>
+                    )}
                     <div className={`mt-0 min-w-0 max-w-full flex flex-col gap-0 ${itemDisplayMode === "cards" ? "items-center" : "items-start"}`}>
                       <button
                         onClick={(event) => { event.stopPropagation(); updateQuantity(item.id, 1); }}
@@ -1737,6 +1741,7 @@ function ItemManager({
     price: "",
     priceMode: "fixed" as "fixed" | "market" | "exchange" | "free" | "discount",
     discountPercent: "",
+    ageOrWeight: "",
     imageUrl: "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -1773,6 +1778,7 @@ function ItemManager({
       price: Number(draft.price),
       price_mode: draft.priceMode,
       discount_percent: Number(draft.discountPercent),
+      age_or_weight: draft.ageOrWeight.trim(),
       emoji: "☕",
     };
     if (
@@ -1823,6 +1829,7 @@ function ItemManager({
       price: "",
       priceMode: "fixed",
       discountPercent: "",
+      ageOrWeight: "",
       imageUrl: "",
     });
     setMessage("تم حفظ الصنف");
@@ -1836,6 +1843,7 @@ function ItemManager({
       price: String(item.price),
       priceMode: item.price_mode || "fixed",
       discountPercent: String(item.discount_percent || ""),
+      ageOrWeight: item.age_or_weight || "",
       imageUrl: item.image_url || "",
     });
     setImageFile(null);
@@ -1930,6 +1938,13 @@ function ItemManager({
           <option value="free">مجاني 100%</option>
           <option value="discount">عليه خصم</option>
         </select>
+        <input
+          value={draft.ageOrWeight}
+          onChange={(event) => setDraft({ ...draft, ageOrWeight: event.target.value })}
+          placeholder="العمر أو الوزن"
+          maxLength={50}
+          className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+        />
         <input
           required={draft.priceMode === "fixed"}
           type="number"

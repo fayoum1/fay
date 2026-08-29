@@ -27,7 +27,7 @@ async function itemData(request: NextRequest, client: ReturnType<typeof database
   const price_mode = allowedModes.includes(String(form.get("price_mode"))) ? String(form.get("price_mode")) : "fixed";
   const discount_percent = price_mode === "discount" ? Number(form.get("discount_percent")) : 0;
   if (price_mode === "discount" && (!Number.isFinite(discount_percent) || discount_percent < 0 || discount_percent > 100)) throw new Error("Invalid discount");
-  return { id: form.get("id") ? Number(form.get("id")) : undefined, name: String(form.get("name") || ""), category: String(form.get("category") || "عام"), price: price_mode === "fixed" || price_mode === "discount" ? Number(form.get("price")) : 0, price_mode, discount_percent, emoji: String(form.get("emoji") || "☕"), image_url };
+  return { id: form.get("id") ? Number(form.get("id")) : undefined, name: String(form.get("name") || ""), category: String(form.get("category") || "عام"), price: price_mode === "fixed" || price_mode === "discount" ? Number(form.get("price")) : 0, price_mode, discount_percent, emoji: String(form.get("emoji") || "☕"), age_or_weight: String(form.get("age_or_weight") || "").trim().slice(0, 50) || null, image_url };
 }
 
 export async function POST(request: NextRequest) {
@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest) {
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
   let body;
   try { body = await itemData(request, client); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid item" }, { status: 400 }); }
-  const update = { name: body.name, category: body.category, price: body.price, price_mode: body.price_mode, discount_percent: body.discount_percent, emoji: body.emoji, updated_at: new Date().toISOString(), ...(body.image_url ? { image_url: body.image_url } : {}) };
+  const update = { name: body.name, category: body.category, price: body.price, price_mode: body.price_mode, discount_percent: body.discount_percent, emoji: body.emoji, age_or_weight: body.age_or_weight, updated_at: new Date().toISOString(), ...(body.image_url ? { image_url: body.image_url } : {}) };
   const { data, error } = await client.from("items").update(update).eq("id", body.id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data);
