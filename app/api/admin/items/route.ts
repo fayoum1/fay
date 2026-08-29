@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest) {
   if (!client) return NextResponse.json({ error: "Supabase service key is not configured" }, { status: 503 });
   let body;
   try { body = await itemData(request, client); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid item" }, { status: 400 }); }
-  const update = { name: body.name, category: body.category, price: body.price, price_mode: body.price_mode, discount_percent: body.discount_percent, emoji: body.emoji, ...(body.image_url ? { image_url: body.image_url } : {}) };
+  const update = { name: body.name, category: body.category, price: body.price, price_mode: body.price_mode, discount_percent: body.discount_percent, emoji: body.emoji, updated_at: new Date().toISOString(), ...(body.image_url ? { image_url: body.image_url } : {}) };
   const { data, error } = await client.from("items").update(update).eq("id", body.id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data);
