@@ -7,7 +7,6 @@ import {
   Check,
   Coffee,
   Download,
-  Grid2X2,
   LockKeyhole,
   LogOut,
   Minus,
@@ -18,7 +17,6 @@ import {
   ShoppingBag,
   Smartphone,
   Trash2,
-  List,
 } from "lucide-react";
 
 type Item = {
@@ -191,7 +189,6 @@ export default function Home() {
   const [showItemSearch, setShowItemSearch] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
   const [category, setCategory] = useState("الكل");
-  const [itemDisplayMode, setItemDisplayMode] = useState<"cards" | "list">("list");
   const [cart, setCart] = useState<Record<number, number>>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState("");
@@ -1110,26 +1107,6 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                <div className="flex shrink-0 items-center rounded-xl border border-[#dedfd8] bg-white p-1 max-[359px]:p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setItemDisplayMode("cards")}
-                    aria-label="عرض الأصناف كبطاقات"
-                    title="عرض البطاقات"
-                    className={`grid size-9 place-items-center rounded-lg transition max-[359px]:size-7 ${itemDisplayMode === "cards" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
-                  >
-                    <Grid2X2 size={17} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setItemDisplayMode("list")}
-                    aria-label="عرض الأصناف كقائمة"
-                    title="عرض القائمة"
-                    className={`grid size-9 place-items-center rounded-lg transition max-[359px]:size-7 ${itemDisplayMode === "list" ? "bg-[#173f3a] text-white" : "text-[#72807a] hover:bg-[#f1f3ed]"}`}
-                  >
-                    <List size={18} />
-                  </button>
-                </div>
               </div>
               <div className="sticky top-[78px] z-20 min-w-0 w-full max-w-full border-b border-[#dedfd8] bg-[#f7f6f2] py-2 shadow-sm overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
                 <div className="flex w-max min-w-full flex-nowrap gap-2">
@@ -1145,17 +1122,17 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <div className={`${itemDisplayMode === "cards" ? "grid min-w-0 grid-cols-1 gap-3 min-[400px]:grid-cols-2 min-[400px]:gap-4 md:grid-cols-3" : "grid min-w-0 gap-3"} pr-1`}>
+            <div className="grid min-w-0 gap-3 pr-1">
               {filteredItems.map((item) => (
                 <article
                   key={item.id}
                   onClick={() => updateQuantity(item.id, 1)}
-                  className={`group relative min-w-0 max-w-full overflow-hidden rounded-2xl border bg-[#fffdf9] transition hover:shadow-lg hover:shadow-[#173f3a0d] ${itemDisplayMode === "cards" ? "p-3 hover:-translate-y-1" : "flex items-center gap-2 p-2"} ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
+                  className={`group relative flex min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-2xl border bg-[#fffdf9] p-2 transition hover:shadow-lg hover:shadow-[#173f3a0d] ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
                 >
                   <div
                     role="img"
                     aria-label={item.name}
-                    className={`grid place-items-center rounded-xl ${item.color} bg-cover bg-center text-5xl transition group-hover:scale-[1.02] ${itemDisplayMode === "cards" ? "aspect-[1.3] text-6xl" : "size-16 shrink-0"}`}
+                    className={`grid size-16 shrink-0 place-items-center rounded-xl ${item.color} bg-cover bg-center text-5xl transition group-hover:scale-[1.02]`}
                     style={
                       item.image_url
                         ? { backgroundImage: `url(${item.image_url})` }
@@ -1164,17 +1141,17 @@ export default function Home() {
                   >
                     {!item.image_url && item.emoji}
                   </div>
-                  <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "min-w-0 flex-1 px-1 py-1"}>
+                  <div className="min-w-0 flex-1 px-1 py-1">
                     <h2 className="text-base font-bold leading-none text-[#173f3a] sm:text-lg">{item.name}</h2>
-                    <div className={`mt-0 min-w-0 max-w-full flex flex-col gap-0 ${itemDisplayMode === "cards" ? "items-center" : "items-start"}`}>
+                    <div className="mt-0 flex min-w-0 max-w-full flex-col items-start gap-0">
                       <button
                         onClick={(event) => { event.stopPropagation(); updateQuantity(item.id, 1); }}
                         aria-label={`إضافة ${item.name} للسلة`}
-                        className={`grid size-9 shrink-0 place-items-center rounded-full bg-[#173f3a] text-white shadow-sm transition hover:bg-[#285951] ${itemDisplayMode === "list" ? "self-end" : ""}`}
+                        className="grid size-9 shrink-0 place-items-center self-end rounded-full bg-[#173f3a] text-white shadow-sm transition hover:bg-[#285951]"
                       >
                         <Plus size={17} strokeWidth={2.5} />
                       </button>
-                      <p className={`max-w-full text-left font-display font-extrabold leading-none text-[#c48738] ${itemDisplayMode === "list" ? "whitespace-nowrap text-sm sm:text-lg" : "text-lg"}`}>
+                      <p className="max-w-full whitespace-nowrap text-left font-display text-sm font-extrabold leading-none text-[#c48738] sm:text-lg">
                         {item.price_mode === "market"
                           ? "سوق"
                           : item.price_mode === "exchange"
@@ -1182,14 +1159,12 @@ export default function Home() {
                             : item.price_mode === "free"
                               ? "مجاني 100%"
                               : <>{item.price_mode === "discount" && <span className="ml-2 text-sm text-[#56816c]">خصم {item.discount_percent}%</span>}{getItemUnitPrice(item)}<span className="mr-1 text-xs font-bold text-[#8b948e]">جنيه</span></>}
-                        {itemDisplayMode === "list" && item.age_or_weight && (
+                        {item.age_or_weight && (
                           <span className="mr-1 text-[10px] font-semibold text-[#56816c] sm:mr-2 sm:text-xs">- {item.age_or_weight}</span>
                         )}
-                        {itemDisplayMode === "list" && (
-                          <span className={`mr-1 text-[10px] font-semibold sm:mr-2 sm:text-xs ${item.availability_status === "غير متاح" ? "text-[#a9584d]" : "text-[#56816c]"}`}>
-                            - {item.availability_status || "متوفر الآن"}
-                          </span>
-                        )}
+                        <span className={`mr-1 text-[10px] font-semibold sm:mr-2 sm:text-xs ${item.availability_status === "غير متاح" ? "text-[#a9584d]" : "text-[#56816c]"}`}>
+                          - {item.availability_status || "متوفر الآن"}
+                        </span>
                       </p>
                     </div>
                   </div>
