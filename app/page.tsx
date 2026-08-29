@@ -5,6 +5,7 @@ import Image from "next/image";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa6";
 import {
   Check,
+  Clock,
   Coffee,
   Download,
   LockKeyhole,
@@ -193,6 +194,10 @@ export default function Home() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [notice, setNotice] = useState("");
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [duplicateBooking, setDuplicateBooking] = useState<{
+    items: { id: string; name: string }[];
+    retryAt: string;
+  } | null>(null);
   const [adminPin, setAdminPin] = useState("");
   const [loginRole, setLoginRole] = useState<UserRole>("admin");
   const [staffNameInput, setStaffNameInput] = useState("");
@@ -518,6 +523,14 @@ export default function Home() {
       }),
     });
     const result = await response.json().catch(() => ({}));
+    if (response.status === 409) {
+      setNotice("");
+      setDuplicateBooking({
+        items: Array.isArray(result.duplicateItems) ? result.duplicateItems : [],
+        retryAt: result.retryAt || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      });
+      return;
+    }
     if (!response.ok) return setNotice(result.error || "تعذر حفظ الطلب، راجع اتصال Supabase");
     setOrders((current) => [
       {
@@ -941,6 +954,60 @@ export default function Home() {
                   </a>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {duplicateBooking && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] px-5"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="duplicate-booking-title"
+          onClick={() => setDuplicateBooking(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-[#f0d9a7] bg-[#fffdf8] p-6 text-center shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto grid size-14 place-items-center rounded-full bg-[#fff0d4] text-[#a66c20]">
+              <Clock size={27} />
+            </div>
+            <h2 id="duplicate-booking-title" className="mt-4 font-display text-xl font-extrabold text-[#173f3a]">
+              تم استلام حجزك بالفعل
+            </h2>
+            <p className="mt-3 text-sm font-semibold leading-7 text-[#596963]">
+              وصل الشركة حجز سابق من نفس رقم الهاتف للأصناف التالية:
+            </p>
+            <p className="mt-2 rounded-xl bg-[#f6f6f1] px-4 py-3 text-sm font-bold text-[#173f3a]">
+              {duplicateBooking.items.map((item) => item.name).join("، ") || "الصنف المحدد"}
+            </p>
+            <p className="mt-3 text-sm leading-7 text-[#72807a]">
+              لا تقلق، الحجز مسجل ولا داعي لتكراره. يمكنك حجز نفس الصنف مرة أخرى بعد الساعة
+              {" "}<strong className="text-[#a66c20]">{new Date(duplicateBooking.retryAt).toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" })}</strong>.
+            </p>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDuplicateBooking(null);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="h-11 rounded-xl border border-[#dedfd8] bg-white text-sm font-bold text-[#72807a]"
+              >
+                العودة للقائمة
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const duplicateIds = new Set(duplicateBooking.items.map((item) => Number(item.id)));
+                  setCart((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !duplicateIds.has(Number(id)))));
+                  setDuplicateBooking(null);
+                }}
+                className="h-11 rounded-xl bg-[#173f3a] text-sm font-bold text-white"
+              >
+                إضافة أصناف أخرى
+              </button>
             </div>
           </div>
         </div>

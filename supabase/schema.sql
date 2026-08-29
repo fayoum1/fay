@@ -151,6 +151,89 @@ create policy "items are readable" on public.items for select using (active = tr
 create policy "admins can read orders" on public.orders for select using (true);
 create policy "admins can update orders" on public.orders for update using (true);
 
+create or replace function public.create_order_without_duplicate_items(
+  p_customer_name text,
+  p_phone text,
+  p_governorate text,
+  p_district text,
+  p_items jsonb,
+  p_total numeric
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  duplicate_items jsonb;
+  latest_duplicate_at timestamptz;
+  created_order public.orders%rowtype;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_phone, 0));
+
+  select
+    jsonb_agg(
+      jsonb_build_object(
+        'id', requested_item.value ->> 'id',
+        'name', coalesce(requested_item.value ->> 'name', 'صنف')
+      )
+    ),
+    max(matching_order.created_at)
+  into duplicate_items, latest_duplicate_at
+  from jsonb_array_elements(p_items) as requested_item(value)
+  join lateral (
+    select existing_order.created_at
+    from public.orders as existing_order
+    where existing_order.phone = p_phone
+      and existing_order.created_at >= now() - interval '1 hour'
+      and existing_order.status not in ('طلب مرفوض', 'غير متاح')
+      and exists (
+        select 1
+        from jsonb_array_elements(existing_order.items) as existing_item(value)
+        where existing_item.value ->> 'id' = requested_item.value ->> 'id'
+      )
+    order by existing_order.created_at desc
+    limit 1
+  ) as matching_order on true;
+
+  if duplicate_items is not null then
+    return jsonb_build_object(
+      'duplicate', true,
+      'items', duplicate_items,
+      'retry_at', latest_duplicate_at + interval '1 hour'
+    );
+  end if;
+
+  insert into public.orders (
+    customer_name,
+    phone,
+    governorate,
+    district,
+    items,
+    total,
+    status
+  ) values (
+    p_customer_name,
+    p_phone,
+    p_governorate,
+    p_district,
+    p_items,
+    p_total,
+    'قيد التنفيذ'
+  )
+  returning * into created_order;
+
+  return jsonb_build_object(
+    'duplicate', false,
+    'id', created_order.id,
+    'created_at', created_order.created_at
+  );
+end;
+$$;
+
+revoke all on function public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric) from public, anon, authenticated;
+grant execute on function public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric) to service_role;
+
 -- Refresh PostgREST after applying this schema in Supabase SQL Editor.
 notify pgrst, 'reload schema';
 
