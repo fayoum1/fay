@@ -28,10 +28,12 @@ type Item = {
   price_mode?: "fixed" | "market" | "exchange" | "free" | "discount";
   discount_percent?: number;
   age_or_weight?: string;
+  availability_status?: ItemAvailabilityStatus;
   emoji: string;
   color: string;
   image_url?: string;
 };
+type ItemAvailabilityStatus = "متوفر الآن" | "جاي بالطريق" | "غير متاح" | "متوفر بالحجز" | "متوفر جملة فقط";
 type Order = {
   id: string;
   customer_name?: string;
@@ -94,6 +96,13 @@ const defaultSettings: SiteSettings = {
   milestone_reward: 1,
 };
 const defaultCategories: string[] = [];
+const itemAvailabilityStatuses: ItemAvailabilityStatus[] = [
+  "متوفر الآن",
+  "جاي بالطريق",
+  "غير متاح",
+  "متوفر بالحجز",
+  "متوفر جملة فقط",
+];
 const QURAN_RADIO_URL = "https://qurango.net/radio/mix";
 
 type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
@@ -1106,12 +1115,12 @@ export default function Home() {
                 <article
                   key={item.id}
                   onClick={() => updateQuantity(item.id, 1)}
-                  className={`group relative min-w-0 max-w-full overflow-hidden rounded-2xl border bg-[#fffdf9] transition hover:shadow-lg hover:shadow-[#173f3a0d] ${itemDisplayMode === "cards" ? "p-3 hover:-translate-y-1" : "flex items-center gap-3 p-3"} ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
+                  className={`group relative min-w-0 max-w-full overflow-hidden rounded-2xl border bg-[#fffdf9] transition hover:shadow-lg hover:shadow-[#173f3a0d] ${itemDisplayMode === "cards" ? "p-3 hover:-translate-y-1" : "flex items-center gap-2 p-2"} ${cart[item.id] ? "border-[#56816c] ring-2 ring-[#56816c26]" : "border-[#e4e3da]"}`}
                 >
                   <div
                     role="img"
                     aria-label={item.name}
-                    className={`grid place-items-center rounded-xl ${item.color} bg-cover bg-center text-5xl transition group-hover:scale-[1.02] ${itemDisplayMode === "cards" ? "aspect-[1.3] text-6xl" : "size-20 shrink-0"}`}
+                    className={`grid place-items-center rounded-xl ${item.color} bg-cover bg-center text-5xl transition group-hover:scale-[1.02] ${itemDisplayMode === "cards" ? "aspect-[1.3] text-6xl" : "size-16 shrink-0"}`}
                     style={
                       item.image_url
                         ? { backgroundImage: `url(${item.image_url})` }
@@ -1130,7 +1139,7 @@ export default function Home() {
                       >
                         <Plus size={17} strokeWidth={2.5} />
                       </button>
-                      <p className="max-w-full text-left font-display text-lg font-extrabold leading-none text-[#c48738]">
+                      <p className={`max-w-full text-left font-display font-extrabold leading-none text-[#c48738] ${itemDisplayMode === "list" ? "whitespace-nowrap text-sm sm:text-lg" : "text-lg"}`}>
                         {item.price_mode === "market"
                           ? "سوق"
                           : item.price_mode === "exchange"
@@ -1139,7 +1148,12 @@ export default function Home() {
                               ? "مجاني 100%"
                               : <>{item.price_mode === "discount" && <span className="ml-2 text-sm text-[#56816c]">خصم {item.discount_percent}%</span>}{getItemUnitPrice(item)}<span className="mr-1 text-xs font-bold text-[#8b948e]">جنيه</span></>}
                         {itemDisplayMode === "list" && item.age_or_weight && (
-                          <span className="mr-2 text-xs font-semibold text-[#56816c]">- {item.age_or_weight}</span>
+                          <span className="mr-1 text-[10px] font-semibold text-[#56816c] sm:mr-2 sm:text-xs">- {item.age_or_weight}</span>
+                        )}
+                        {itemDisplayMode === "list" && (
+                          <span className={`mr-1 text-[10px] font-semibold sm:mr-2 sm:text-xs ${item.availability_status === "غير متاح" ? "text-[#a9584d]" : "text-[#56816c]"}`}>
+                            - {item.availability_status || "متوفر الآن"}
+                          </span>
                         )}
                       </p>
                     </div>
@@ -1743,6 +1757,7 @@ function ItemManager({
     priceMode: "fixed" as "fixed" | "market" | "exchange" | "free" | "discount",
     discountPercent: "",
     ageOrWeight: "",
+    availabilityStatus: "متوفر الآن" as ItemAvailabilityStatus,
     imageUrl: "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -1750,9 +1765,11 @@ function ItemManager({
   const [newCategory, setNewCategory] = useState("");
   const [itemSearch, setItemSearch] = useState("");
   const [itemCategory, setItemCategory] = useState("الكل");
+  const [itemAvailability, setItemAvailability] = useState("الكل");
   const filteredMenuItems = menuItems.filter(
     (item) =>
       (itemCategory === "الكل" || item.category === itemCategory) &&
+      (itemAvailability === "الكل" || (item.availability_status || "متوفر الآن") === itemAvailability) &&
       item.name.toLocaleLowerCase("ar").includes(itemSearch.trim().toLocaleLowerCase("ar")),
   );
 
@@ -1787,6 +1804,7 @@ function ItemManager({
       price_mode: draft.priceMode,
       discount_percent: Number(draft.discountPercent),
       age_or_weight: draft.ageOrWeight.trim(),
+      availability_status: draft.availabilityStatus,
       emoji: "☕",
     };
     if (
@@ -1838,6 +1856,7 @@ function ItemManager({
       priceMode: "fixed",
       discountPercent: "",
       ageOrWeight: "",
+      availabilityStatus: "متوفر الآن",
       imageUrl: "",
     });
     setMessage("تم حفظ الصنف");
@@ -1852,6 +1871,7 @@ function ItemManager({
       priceMode: item.price_mode || "fixed",
       discountPercent: String(item.discount_percent || ""),
       ageOrWeight: item.age_or_weight || "",
+      availabilityStatus: item.availability_status || "متوفر الآن",
       imageUrl: item.image_url || "",
     });
     setImageFile(null);
@@ -1953,6 +1973,15 @@ function ItemManager({
           maxLength={50}
           className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
         />
+        <select
+          value={draft.availabilityStatus}
+          onChange={(event) => setDraft({ ...draft, availabilityStatus: event.target.value as ItemAvailabilityStatus })}
+          className="select-with-arrow h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+        >
+          {itemAvailabilityStatuses.map((status) => (
+            <option key={status} value={status}>{status}</option>
+          ))}
+        </select>
         <input
           required={draft.priceMode === "fixed"}
           type="number"
@@ -2055,7 +2084,7 @@ function ItemManager({
           <p className="text-sm font-bold text-[#173f3a]">فلترة الأصناف</p>
           <span className="text-xs text-[#89918c]">{filteredMenuItems.length} نتيجة</span>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 sm:grid-cols-3">
           <div className="relative">
             <Search className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#89918c]" size={16} />
             <input
@@ -2073,6 +2102,16 @@ function ItemManager({
             <option value="الكل">كل الفئات</option>
             {categories.map((category) => (
               <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+          <select
+            value={itemAvailability}
+            onChange={(event) => setItemAvailability(event.target.value)}
+            className="select-with-arrow h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+          >
+            <option value="الكل">كل الحالات</option>
+            {itemAvailabilityStatuses.map((status) => (
+              <option key={status} value={status}>{status}</option>
             ))}
           </select>
         </div>
@@ -2106,6 +2145,8 @@ function ItemManager({
                       : item.price_mode === "discount"
                         ? `خصم ${item.discount_percent}% - ${item.price} جنيه`
                         : `${item.price} جنيه`}
+                      <span className="mx-1">•</span>
+                      {item.availability_status || "متوفر الآن"}
               </p>
             </div>
             <button
