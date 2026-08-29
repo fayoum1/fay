@@ -11,7 +11,11 @@ export async function POST(request: Request) {
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
 
   const body = await request.json().catch(() => null);
+  const customerName = typeof body?.customer_name === "string" ? body.customer_name.trim().slice(0, 100) : "";
   const phone = normalizePhone(typeof body?.phone === "string" ? body.phone : "").replace(/\D/g, "");
+  if (!customerName) {
+    return NextResponse.json({ error: "اكتب اسم العميل" }, { status: 400 });
+  }
   if (!/^(010|011|012|015)\d{8}$/.test(phone)) {
     return NextResponse.json({ error: "رقم الهاتف يجب أن يكون 11 رقمًا ويبدأ بـ 010 أو 011 أو 012 أو 015" }, { status: 400 });
   }
@@ -30,6 +34,7 @@ export async function POST(request: Request) {
   if ((count || 0) >= 3) return NextResponse.json({ error: "لا يمكن تسجيل أكثر من 3 طلبات لهذا الرقم خلال ساعة واحدة" }, { status: 429 });
 
   const { data, error } = await database.from("orders").insert({
+    customer_name: customerName,
     phone,
     governorate: body.governorate,
     district: body.district || null,

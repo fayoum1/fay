@@ -33,19 +33,22 @@ export async function GET(request: NextRequest) {
   }
 
   const database = createClient(url, key, { auth: { persistSession: false } });
-  const [{ count: newBookings, error: bookingsError }, { count: completedOrders, error: completedError }] =
+  const fields = "id, customer_name, phone, governorate, district, items, total, status, created_at, status_changed_at, staff_name";
+  const [{ data: newBookingDetails, error: bookingsError }, { data: completedOrderDetails, error: completedError }] =
     await Promise.all([
       database
         .from("orders")
-        .select("id", { count: "exact", head: true })
+        .select(fields)
         .gte("created_at", fromTime.toISOString())
-        .lt("created_at", toTime.toISOString()),
+        .lt("created_at", toTime.toISOString())
+        .order("created_at", { ascending: true }),
       database
         .from("orders")
-        .select("id", { count: "exact", head: true })
+        .select(fields)
         .eq("status", "تم")
         .gte("status_changed_at", fromTime.toISOString())
-        .lt("status_changed_at", toTime.toISOString()),
+        .lt("status_changed_at", toTime.toISOString())
+        .order("status_changed_at", { ascending: true }),
     ]);
 
   if (bookingsError || completedError) {
@@ -55,8 +58,41 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const formatOrder = (order: {
+    id: number;
+    customer_name: string | null;
+    phone: string;
+    governorate: string;
+    district: string | null;
+    items: unknown;
+    total: number;
+    status: string;
+    created_at: string;
+    status_changed_at: string;
+    staff_name: string | null;
+  }) => ({
+    id: order.id,
+    customerName: order.customer_name || "غير مسجل",
+    phone: order.phone,
+    governorate: order.governorate,
+    district: order.district,
+    items: Array.isArray(order.items)
+      ? order.items.map((item) => {
+          const entry = item as { name?: unknown; quantity?: unknown };
+          return `${String(entry.name || "صنف")} x ${Number(entry.quantity) || 1}`;
+        })
+      : [],
+    total: Number(order.total) || 0,
+    status: order.status,
+    createdAt: order.created_at,
+    statusChangedAt: order.status_changed_at,
+    staffName: order.staff_name,
+  });
+
   return NextResponse.json({
-    newBookings: newBookings || 0,
-    completedOrders: completedOrders || 0,
+    newBookings: newBookingDetails?.length || 0,
+    completedOrders: completedOrderDetails?.length || 0,
+    newBookingDetails: (newBookingDetails || []).map(formatOrder),
+    completedOrderDetails: (completedOrderDetails || []).map(formatOrder),
   });
 }

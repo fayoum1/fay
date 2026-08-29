@@ -33,6 +33,7 @@ type Item = {
 };
 type Order = {
   id: string;
+  customer_name?: string;
   phone: string;
   governorate: string;
   district?: string;
@@ -163,6 +164,7 @@ function isWithinPenalty(date: Date, windows: { start: Date; end: Date }[]) {
 
 export default function Home() {
   const [view, setView] = useState<"cashier" | "admin">("cashier");
+  const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [governorate, setGovernorate] = useState("الفيوم");
   const [district, setDistrict] = useState("");
@@ -468,6 +470,7 @@ export default function Home() {
     }));
   };
   const submitOrder = async () => {
+    if (!customerName.trim()) return setNotice("اكتب اسم العميل");
     const normalizedPhone = normalizePhone(phone).replace(/\D/g, "");
     if (!isValidMobilePhone(normalizedPhone)) return setNotice("اكتب رقم هاتف محمول صحيح من 11 رقمًا ويبدأ بـ 010 أو 011 أو 012 أو 015");
     if (governorate === "الفيوم" && !district)
@@ -482,6 +485,7 @@ export default function Home() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        customer_name: customerName.trim(),
         phone: normalizedPhone,
         governorate: governorate === "أخرى" ? district.trim() : governorate,
         district: governorate === "الفيوم" ? district : null,
@@ -501,6 +505,7 @@ export default function Home() {
     setOrders((current) => [
       {
         id: `#${1043 + current.length}`,
+        customer_name: customerName.trim(),
         phone: normalizedPhone,
         governorate,
         district,
@@ -513,6 +518,7 @@ export default function Home() {
       ...current,
     ]);
     setCart({});
+    setCustomerName("");
     setPhone("");
     setGovernorate("الفيوم");
     setDistrict("");
@@ -1251,6 +1257,15 @@ export default function Home() {
                 </strong>
                 {hasVariablePrice && <small className="mt-1 block text-xs font-semibold text-[#a66c20]">لا يوجد سعر محدد</small>}
               </div>
+            </div>
+            <div className="relative mb-3">
+              <input
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+                placeholder="اسم العميل للحجز"
+                maxLength={100}
+                className="h-11 w-full rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+              />
             </div>
             <div className="relative mb-3">
               <Smartphone
