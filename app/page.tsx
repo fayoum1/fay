@@ -1122,9 +1122,6 @@ export default function Home() {
                   </div>
                   <div className={itemDisplayMode === "cards" ? "min-w-0 px-1 pt-3" : "min-w-0 flex-1 px-1 py-1"}>
                     <h2 className="text-base font-bold leading-none text-[#173f3a] sm:text-lg">{item.name}</h2>
-                    {itemDisplayMode === "list" && item.age_or_weight && (
-                      <p className="mt-1 text-xs font-semibold text-[#56816c]">{item.age_or_weight}</p>
-                    )}
                     <div className={`mt-0 min-w-0 max-w-full flex flex-col gap-0 ${itemDisplayMode === "cards" ? "items-center" : "items-start"}`}>
                       <button
                         onClick={(event) => { event.stopPropagation(); updateQuantity(item.id, 1); }}
@@ -1133,7 +1130,7 @@ export default function Home() {
                       >
                         <Plus size={17} strokeWidth={2.5} />
                       </button>
-                      <p className="max-w-full truncate text-left font-display text-lg font-extrabold leading-none text-[#c48738]">
+                      <p className="max-w-full text-left font-display text-lg font-extrabold leading-none text-[#c48738]">
                         {item.price_mode === "market"
                           ? "سوق"
                           : item.price_mode === "exchange"
@@ -1141,6 +1138,9 @@ export default function Home() {
                             : item.price_mode === "free"
                               ? "مجاني 100%"
                               : <>{item.price_mode === "discount" && <span className="ml-2 text-sm text-[#56816c]">خصم {item.discount_percent}%</span>}{getItemUnitPrice(item)}<span className="mr-1 text-xs font-bold text-[#8b948e]">جنيه</span></>}
+                        {itemDisplayMode === "list" && item.age_or_weight && (
+                          <span className="mr-2 text-xs font-semibold text-[#56816c]">- {item.age_or_weight}</span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -1942,7 +1942,7 @@ function ItemManager({
         <input
           value={draft.ageOrWeight}
           onChange={(event) => setDraft({ ...draft, ageOrWeight: event.target.value })}
-          placeholder="العمر أو الوزن"
+          placeholder="مثال: العمر: 12 يوم"
           maxLength={50}
           className="h-10 rounded-lg border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
         />
