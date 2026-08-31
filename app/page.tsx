@@ -360,7 +360,12 @@ export default function Home() {
     const clock = window.setInterval(() => setCurrentTime(Date.now()), 60000);
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     window.setTimeout(() => setIsIOS(ios), 0);
-    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js", { updateViaCache: "none" })
+        .then((registration) => registration.update())
+        .catch(() => undefined);
+    }
     const handleInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
     window.addEventListener("beforeinstallprompt", handleInstallPrompt);
     return () => { window.clearTimeout(initialClock); window.clearInterval(clock); window.removeEventListener("beforeinstallprompt", handleInstallPrompt); };
