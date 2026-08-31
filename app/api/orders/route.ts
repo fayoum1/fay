@@ -22,6 +22,17 @@ export async function POST(request: Request) {
   if (!Array.isArray(body?.items) || !body.items.length) {
     return NextResponse.json({ error: "أضف صنفًا واحدًا على الأقل للسلة" }, { status: 400 });
   }
+  const totalQuantity = body.items.reduce(
+    (sum: number, item: { quantity?: unknown }) =>
+      sum + (typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, Math.floor(item.quantity)) : 0),
+    0,
+  );
+  if (body.governorate !== "الفيوم" && totalQuantity < 100) {
+    return NextResponse.json(
+      { error: "لا يوجد توصيل أو حجز للكميات الصغيرة خارج محافظة الفيوم. يرجى زيادة الكمية أو التواصل مع فريق الدعم 0842064130" },
+      { status: 400 },
+    );
+  }
 
   const database = createClient(url, key, { auth: { persistSession: false } });
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();

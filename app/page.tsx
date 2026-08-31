@@ -54,10 +54,11 @@ type Order = {
     category?: string;
   }[];
 };
-type OrderStatus = "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
+type OrderStatus = "قادم" | "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
 type UserRole = "admin" | "staff";
 type Employee = { id: number; name: string; active: boolean; created_at: string };
 const orderStatuses: OrderStatus[] = [
+  "قادم",
   "قيد التنفيذ",
   "تم",
   "لم يرد",
@@ -228,6 +229,8 @@ export default function Home() {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
+  const [showDesktopInstallHelp, setShowDesktopInstallHelp] = useState(false);
+  const [showOutsideDeliveryWarning, setShowOutsideDeliveryWarning] = useState(false);
   const [pendingDeleteOrder, setPendingDeleteOrder] = useState<string | null>(null);
   const [milestoneMessage, setMilestoneMessage] = useState("");
   const [pendingStatusConfirm, setPendingStatusConfirm] = useState<{ id: string; status: OrderStatus } | null>(null);
@@ -330,7 +333,7 @@ export default function Home() {
       [status]: filteredOrders.filter((order) => order.status === status)
         .length,
     }),
-    { "قيد التنفيذ": 0, تم: 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 },
+    { قادم: 0, "قيد التنفيذ": 0, تم: 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 },
   );
 
   useEffect(() => {
@@ -450,7 +453,10 @@ export default function Home() {
   }, []);
 
   const installApp = async () => {
-    if (!installPrompt) return;
+    if (!installPrompt) {
+      setShowDesktopInstallHelp(true);
+      return;
+    }
     await installPrompt.prompt();
     await installPrompt.userChoice;
     setInstallPrompt(null);
@@ -499,6 +505,12 @@ export default function Home() {
     if (governorate === "أخرى" && !district.trim())
       return setNotice("اكتب اسم محافظتك أولاً");
     if (!cartItems.length) return setNotice("أضف صنفاً واحداً على الأقل للسلة");
+    const totalQuantity = cartItems.reduce((sum, entry) => sum + entry.quantity, 0);
+    if (governorate !== "الفيوم" && totalQuantity < 100) {
+      setNotice("");
+      setShowOutsideDeliveryWarning(true);
+      return;
+    }
     const orderItems = cartItems
       .map(({ item, quantity }) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${quantity}`)
       .join("، ");
@@ -753,7 +765,7 @@ export default function Home() {
                 </span>
               )}
             </button>
-            {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-14 shrink-0 place-items-center rounded-xl border border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
+            <button onClick={installApp} className="grid size-14 shrink-0 place-items-center rounded-xl border border-[#e2e1d8] bg-[#fffdf8] text-[#173f3a]" aria-label="تثبيت التطبيق على سطح المكتب" title="تثبيت التطبيق على سطح المكتب"><Download size={18} /></button>
           </div>
           <div className="hidden items-center gap-2 text-xs text-[#72807a] sm:flex">
             <span className="size-2 rounded-full bg-[#5aa67d]" />{" "}
@@ -768,7 +780,7 @@ export default function Home() {
           >
             <Radio size={19} />
           </button>
-          {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#c48738] text-white sm:size-12" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
+          {(installPrompt || isIOS) && <button onClick={isIOS ? installOnIOS : installApp} className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#c48738] text-white sm:size-12 lg:hidden" aria-label="تثبيت التطبيق" title="تثبيت التطبيق"><Download size={18} /></button>}
         </div>
       </header>
       <div className="sticky top-0 z-30 border-b border-[#dedfd8] bg-[#fbfaf7] px-3 py-2.5 lg:hidden">
@@ -825,6 +837,26 @@ export default function Home() {
         aria-label="إذاعة القرآن الكريم من مصر"
       />
       {showIOSInstall && <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-[#e2e1d8] bg-[#fffdf9] p-4 text-right shadow-2xl"><button onClick={() => setShowIOSInstall(false)} className="float-left text-xl text-[#72807a]" aria-label="إغلاق">×</button><p className="font-bold text-[#173f3a]">تثبيت التطبيق على iPhone</p><p className="mt-2 text-sm leading-6 text-[#596963]">اضغط زر المشاركة في المتصفح، ثم اختر <strong>إضافة إلى الشاشة الرئيسية</strong>، وبعدها افتح التطبيق من الأيقونة.</p></div>}
+      {showDesktopInstallHelp && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] px-5" role="dialog" aria-modal="true" aria-labelledby="desktop-install-title" onClick={() => setShowDesktopInstallHelp(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mx-auto grid size-14 place-items-center rounded-full bg-[#e4eee5] text-[#173f3a]"><Download size={26} /></div>
+            <h2 id="desktop-install-title" className="mt-4 font-display text-xl font-bold text-[#173f3a]">تثبيت البرنامج على سطح المكتب</h2>
+            <p className="mt-3 text-sm leading-7 text-[#596963]">اختر تثبيت التطبيق من شريط عنوان المتصفح أو من قائمة المتصفح. إذا لم يظهر الخيار، فقد يكون البرنامج مثبتًا بالفعل.</p>
+            <button type="button" onClick={() => setShowDesktopInstallHelp(false)} className="mt-5 h-11 w-full rounded-xl bg-[#173f3a] text-sm font-bold text-white">حسنًا</button>
+          </div>
+        </div>
+      )}
+      {showOutsideDeliveryWarning && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] px-5" role="alertdialog" aria-modal="true" aria-labelledby="outside-delivery-title" onClick={() => setShowOutsideDeliveryWarning(false)}>
+          <div className="w-full max-w-md rounded-2xl border border-[#f0d9a7] bg-[#fffdf8] p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h2 id="outside-delivery-title" className="font-display text-xl font-extrabold text-[#a66c20]">تنبيه بخصوص التوصيل والحجز</h2>
+            <p className="mt-3 text-sm font-semibold leading-7 text-[#596963]">لا يوجد توصيل أو حجز للكميات الصغيرة خارج محافظة الفيوم. يرجى زيادة إجمالي عدد الأصناف إلى 100 أو أكثر، أو التواصل مع فريق الدعم.</p>
+            <a href="tel:0842064130" className="mt-4 block rounded-xl bg-[#fff0d4] px-4 py-3 font-bold text-[#a66c20]">0842064130</a>
+            <button type="button" onClick={() => setShowOutsideDeliveryWarning(false)} className="mt-4 h-11 w-full rounded-xl bg-[#173f3a] text-sm font-bold text-white">العودة لزيادة الكمية</button>
+          </div>
+        </div>
+      )}
       {pendingDeleteOrder && (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a66] px-5"

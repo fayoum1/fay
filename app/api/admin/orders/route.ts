@@ -17,7 +17,7 @@ export async function PATCH(request: NextRequest) {
   const role = await getAdminRole(request);
   if (!role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id, status, staff_name, previous_status } = await request.json();
-  const allowed = ["قيد التنفيذ", "تم", "لم يرد", "غير متاح", "طلب مرفوض"];
+  const allowed = ["قادم", "قيد التنفيذ", "تم", "لم يرد", "غير متاح", "طلب مرفوض"];
   if (!Number.isInteger(id) || !allowed.includes(status)) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;

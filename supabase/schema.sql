@@ -125,7 +125,7 @@ create table if not exists public.orders (
   district text,
   items jsonb not null default '[]'::jsonb,
   total numeric(10, 2) not null default 0,
-  status text not null default 'قيد التنفيذ' check (status in ('قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض')),
+  status text not null default 'قيد التنفيذ' check (status in ('قادم', 'قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض')),
   status_changed_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
@@ -142,7 +142,7 @@ alter table public.orders add constraint orders_phone_check check (phone ~ '^(01
 alter table public.items enable row level security;
 alter table public.orders enable row level security;
 alter table public.orders drop constraint if exists orders_status_check;
-alter table public.orders add constraint orders_status_check check (status in ('قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض'));
+alter table public.orders add constraint orders_status_check check (status in ('قادم', 'قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض'));
 drop policy if exists "items are readable" on public.items;
 drop policy if exists "anyone can create orders" on public.orders;
 drop policy if exists "admins can read orders" on public.orders;
