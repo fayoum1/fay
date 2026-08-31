@@ -52,12 +52,16 @@ type Order = {
     name: string;
     quantity: number;
     category?: string;
+    age_or_weight?: string | null;
+    price?: number;
+    final_price?: number;
   }[];
 };
-type OrderStatus = "قادم" | "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
+type OrderStatus = "حجز مؤكد" | "قادم" | "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
 type UserRole = "admin" | "staff";
 type Employee = { id: number; name: string; active: boolean; created_at: string };
 const orderStatuses: OrderStatus[] = [
+  "حجز مؤكد",
   "قادم",
   "قيد التنفيذ",
   "تم",
@@ -207,7 +211,7 @@ export default function Home() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [menuItems, setMenuItems] = useState<Item[]>([]);
-  const [adminTab, setAdminTab] = useState<"orders" | "menu" | "settings" | "employees" | "marketing" | "targets">(
+  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets">(
     "orders",
   );
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -216,6 +220,8 @@ export default function Home() {
   const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [categoryOptions, setCategoryOptions] = useState(defaultCategories);
   const [todayOrdersCount, setTodayOrdersCount] = useState(0);
+  const [confirmedOrdersCount, setConfirmedOrdersCount] = useState(0);
+  const [ordersDialog, setOrdersDialog] = useState<"today" | "confirmed" | null>(null);
   const [orderCategory, setOrderCategory] = useState("الكل");
   const [orderItem, setOrderItem] = useState("الكل");
   const [orderPeriod, setOrderPeriod] = useState("all");
@@ -333,8 +339,12 @@ export default function Home() {
       [status]: filteredOrders.filter((order) => order.status === status)
         .length,
     }),
-    { قادم: 0, "قيد التنفيذ": 0, تم: 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 },
+    { "حجز مؤكد": 0, قادم: 0, "قيد التنفيذ": 0, تم: 0, "لم يرد": 0, "غير متاح": 0, "طلب مرفوض": 0 },
   );
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const todayOrders = orders.filter((order) => new Date(order.created_at) >= startOfToday);
+  const confirmedOrders = orders.filter((order) => order.status === "حجز مؤكد" || order.status === "قادم");
 
   useEffect(() => {
     if (!milestoneMessage) return;
@@ -423,8 +433,10 @@ export default function Home() {
     )
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (data && typeof data.count === "number")
+        if (data && typeof data.count === "number") {
           setTodayOrdersCount(data.count);
+          setConfirmedOrdersCount(typeof data.confirmedCount === "number" ? data.confirmedCount : 0);
+        }
       })
       .catch(() => undefined);
     fetch("/api/items")
@@ -456,6 +468,28 @@ export default function Home() {
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!adminAuthenticated) return;
+    const refreshOrders = () => {
+      fetch("/api/admin/orders")
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setOrders(data);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            setTodayOrdersCount(data.filter((order: Order) => new Date(order.created_at) >= today).length);
+            setConfirmedOrdersCount(
+              data.filter((order: Order) => order.status === "حجز مؤكد" || order.status === "قادم").length,
+            );
+          }
+        })
+        .catch(() => undefined);
+    };
+    const interval = window.setInterval(refreshOrders, 30000);
+    return () => window.clearInterval(interval);
+  }, [adminAuthenticated]);
 
   const installApp = async () => {
     if (!installPrompt) {
@@ -608,6 +642,13 @@ export default function Home() {
           : order,
       ),
     );
+    setConfirmedOrdersCount((count) =>
+      target && (target.status === "حجز مؤكد" || target.status === "قادم") && status !== "حجز مؤكد" && status !== "قادم"
+        ? Math.max(0, count - 1)
+        : target && target.status !== "حجز مؤكد" && target.status !== "قادم" && (status === "حجز مؤكد" || status === "قادم")
+          ? count + 1
+          : count,
+    );
     if (status === "تم" && target?.status !== "تم" && userRole === "staff" && staffName) {
       const interval = Math.max(1, settings.milestone_count || 1);
       const reward = settings.milestone_reward || 0;
@@ -747,12 +788,13 @@ export default function Home() {
             </button>
           </nav>
           <div className="hidden items-center gap-2 lg:flex">
-            <div className="flex h-14 min-w-32 items-center justify-center gap-3 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-4 text-right">
-              <p className="text-[11px] text-[#89918c]">طلبات اليوم</p>
-              <p className="font-display text-xl font-bold text-[#173f3a]">
-                {todayOrdersCount}
-              </p>
-            </div>
+            <OrderSummary
+              todayCount={todayOrdersCount}
+              confirmedCount={confirmedOrdersCount}
+              interactive={adminAuthenticated}
+              onToday={() => setOrdersDialog("today")}
+              onConfirmed={() => setOrdersDialog("confirmed")}
+            />
             <button
               onClick={() =>
                 cartRef.current?.scrollIntoView({
@@ -804,12 +846,14 @@ export default function Home() {
               الأدمن
             </button>
           </nav>
-          <div className="flex h-12 items-center justify-center gap-1 rounded-xl border border-[#e2e1d8] bg-[#fffdf8] px-1 sm:h-14 sm:px-2">
-              <p className="text-[10px] text-[#89918c]">طلبات اليوم</p>
-              <p className="font-display text-base font-bold text-[#173f3a] sm:text-lg">
-                {todayOrdersCount}
-              </p>
-          </div>
+          <OrderSummary
+            todayCount={todayOrdersCount}
+            confirmedCount={confirmedOrdersCount}
+            interactive={adminAuthenticated}
+            onToday={() => setOrdersDialog("today")}
+            onConfirmed={() => setOrdersDialog("confirmed")}
+            compact
+          />
           <button
               onClick={() =>
                 cartRef.current?.scrollIntoView({
@@ -841,6 +885,14 @@ export default function Home() {
         onError={handleRadioError}
         aria-label="إذاعة القرآن الكريم من مصر"
       />
+      {ordersDialog && adminAuthenticated && (
+        <OrdersDialog
+          title={ordersDialog === "today" ? "طلبات اليوم" : "الحجوزات المؤكدة والقادمة"}
+          orders={ordersDialog === "today" ? todayOrders : confirmedOrders}
+          onClose={() => setOrdersDialog(null)}
+          onStatusChange={handleStatusSelect}
+        />
+      )}
       {showIOSInstall && <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-[#e2e1d8] bg-[#fffdf9] p-4 text-right shadow-2xl"><button onClick={() => setShowIOSInstall(false)} className="float-left text-xl text-[#72807a]" aria-label="إغلاق">×</button><p className="font-bold text-[#173f3a]">تثبيت التطبيق على iPhone</p><p className="mt-2 text-sm leading-6 text-[#596963]">اضغط زر المشاركة في المتصفح، ثم اختر <strong>إضافة إلى الشاشة الرئيسية</strong>، وبعدها افتح التطبيق من الأيقونة.</p></div>}
       {showDesktopInstallHelp && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] px-5" role="dialog" aria-modal="true" aria-labelledby="desktop-install-title" onClick={() => setShowDesktopInstallHelp(false)}>
@@ -1559,12 +1611,20 @@ export default function Home() {
                 الطلبات
               </button>
               {userRole === "staff" && (
-                <button
-                  onClick={() => setAdminTab("targets")}
-                  className={`rounded-lg px-5 py-2.5 transition ${adminTab === "targets" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
-                >
-                  التارجيت
-                </button>
+                <>
+                  <button
+                    onClick={() => setAdminTab("targets")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "targets" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    التارجيت
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("edit-order")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "edit-order" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    تعديل طلب
+                  </button>
+                </>
               )}
               {userRole === "admin" && (
                 <>
@@ -1573,6 +1633,12 @@ export default function Home() {
                     className={`rounded-lg px-5 py-2.5 transition ${adminTab === "targets" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
                   >
                     التارجيت
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("edit-order")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "edit-order" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    تعديل طلب
                   </button>
                   <button
                     onClick={() => setAdminTab("menu")}
@@ -1613,7 +1679,7 @@ export default function Home() {
               )}
               </div>
             </nav>
-            {adminTab !== "targets" && (
+            {adminTab === "orders" && (
               <div className="relative w-full sm:w-64">
                 <Search
                   className="absolute right-3 top-3 text-[#9ca49d]"
@@ -1637,6 +1703,8 @@ export default function Home() {
             <TargetsManager orders={orders} settings={settings} />
           ) : adminTab === "targets" && userRole === "staff" ? (
             <MyTargetCard orders={orders} settings={settings} staffName={staffName} />
+          ) : adminTab === "edit-order" ? (
+            <OrderEditor orders={orders} menuItems={menuItems} setOrders={setOrders} />
           ) : userRole === "staff" ? (
             <>
               <div className="mb-5 rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4">
@@ -1907,6 +1975,211 @@ export default function Home() {
         {settings.name} <span className="mx-2">•</span> إدارة الحجوزات ببساطة
       </footer>
     </main>
+  );
+}
+
+function OrderEditor({
+  orders,
+  menuItems,
+  setOrders,
+}: {
+  orders: Order[];
+  menuItems: Item[];
+  setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
+}) {
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [showReview, setShowReview] = useState(false);
+  const [message, setMessage] = useState("");
+  const selectedOrder = orders.find((order) => order.id === selectedId);
+  const normalizedSearch = search.trim().toLocaleLowerCase("ar");
+  const matchingOrders = normalizedSearch
+    ? orders.filter(
+        (order) =>
+          order.status !== "تم" &&
+          (order.phone.includes(normalizedSearch) ||
+            order.customer_name?.toLocaleLowerCase("ar").includes(normalizedSearch)),
+      )
+    : [];
+  const originalQuantities = Object.fromEntries(
+    (selectedOrder?.order_items || []).map((item) => [item.id, item.quantity]),
+  );
+  const changes = menuItems.flatMap((item) => {
+    const before = originalQuantities[item.id] || 0;
+    const after = quantities[item.id] || 0;
+    if (before === after) return [];
+    if (!before) return [`إضافة ${item.name} بكمية ${after}`];
+    if (!after) return [`حذف ${item.name} من الطلب`];
+    return [`تغيير ${item.name} من ${before} إلى ${after}`];
+  });
+
+  const selectOrder = (order: Order) => {
+    setSelectedId(order.id);
+    setQuantities(Object.fromEntries((order.order_items || []).map((item) => [item.id, item.quantity])));
+    setShowReview(false);
+    setMessage("");
+  };
+
+  const saveChanges = async () => {
+    if (!selectedOrder) return;
+    const items = Object.entries(quantities)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([id, quantity]) => ({ id: Number(id), quantity }));
+    const response = await fetch("/api/admin/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: Number(selectedOrder.id.replace("#", "")), items }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تعديل الطلب");
+    const orderItems = Array.isArray(result.items) ? result.items : [];
+    setOrders((current) =>
+      current.map((order) =>
+        order.id === selectedOrder.id
+          ? {
+              ...order,
+              order_items: orderItems,
+              items: orderItems.map((item: { name: string; age_or_weight?: string | null; quantity: number }) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${item.quantity}`).join("، "),
+              total: Number(result.total) || 0,
+            }
+          : order,
+      ),
+    );
+    setShowReview(false);
+    setMessage("تم تعديل الطلب بنجاح");
+  };
+
+  return (
+    <section className="grid gap-5 lg:grid-cols-[340px_1fr]">
+      <div className="h-fit rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
+        <h2 className="font-display text-xl font-bold text-[#173f3a]">البحث عن طلب</h2>
+        <p className="mt-1 text-xs leading-6 text-[#89918c]">ابحث باسم العميل أو رقم الهاتف. الطلبات المكتملة لا تظهر هنا.</p>
+        <div className="relative mt-4">
+          <Search className="absolute right-3 top-3 text-[#89918c]" size={17} />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="الاسم أو رقم الهاتف" className="h-11 w-full rounded-xl border border-[#dedfd8] bg-white pr-10 pl-3 text-sm outline-none focus:border-[#173f3a]" />
+        </div>
+        <div className="mt-3 grid max-h-[440px] gap-2 overflow-y-auto">
+          {matchingOrders.map((order) => (
+            <button key={order.id} type="button" onClick={() => selectOrder(order)} className={`rounded-xl border p-3 text-right ${selectedId === order.id ? "border-[#173f3a] bg-[#e4eee5]" : "border-[#e7e7df] bg-white"}`}>
+              <span className="flex justify-between text-sm font-bold text-[#173f3a]"><span>{order.customer_name || "بدون اسم"}</span><span>{order.id}</span></span>
+              <span className="mt-1 block text-xs text-[#596963]">{order.phone} | {order.status}</span>
+            </button>
+          ))}
+          {normalizedSearch && !matchingOrders.length && <p className="py-6 text-center text-sm text-[#89918c]">لا توجد طلبات غير مكتملة مطابقة.</p>}
+        </div>
+      </div>
+      <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
+        {selectedOrder ? (
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e7e7df] pb-4">
+              <div><h2 className="font-display text-xl font-bold text-[#173f3a]">تعديل {selectedOrder.id}</h2><p className="mt-1 text-xs text-[#72807a]">{selectedOrder.customer_name} | {selectedOrder.phone}</p></div>
+              <span className="rounded-lg bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20]">{selectedOrder.status}</span>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {menuItems.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 rounded-xl border border-[#ecece5] p-3">
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-[#173f3a]">{item.name}</p><p className="text-xs text-[#89918c]">{item.category}</p></div>
+                  <input type="number" min="0" value={quantities[item.id] || 0} onChange={(event) => setQuantities((current) => ({ ...current, [item.id]: Math.max(0, Math.floor(Number(event.target.value) || 0)) }))} aria-label={`كمية ${item.name}`} className="h-10 w-20 rounded-lg border border-[#dedfd8] text-center font-bold outline-none focus:border-[#173f3a]" />
+                </div>
+              ))}
+            </div>
+            <button type="button" disabled={!changes.length} onClick={() => { setMessage(""); setShowReview(true); }} className="mt-5 h-11 w-full rounded-xl bg-[#c48738] font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">مراجعة التعديلات</button>
+            {message && <p className="mt-3 text-center text-sm font-bold text-[#56816c]">{message}</p>}
+            {showReview && (
+              <div className="mt-4 rounded-xl border border-[#f0d9a7] bg-[#fff8e8] p-4">
+                <h3 className="font-bold text-[#173f3a]">سيتم تعديل الآتي:</h3>
+                <ul className="mt-2 grid gap-1 text-sm leading-6 text-[#596963]">{changes.map((change) => <li key={change}>• {change}</li>)}</ul>
+                <div className="mt-4 flex gap-2"><button type="button" onClick={() => setShowReview(false)} className="h-11 flex-1 rounded-xl border border-[#dedfd8] bg-white font-bold text-[#72807a]">رجوع</button><button type="button" onClick={() => void saveChanges()} className="h-11 flex-1 rounded-xl bg-[#173f3a] font-bold text-white">تأكيد التعديل</button></div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="grid min-h-64 place-items-center text-center text-sm text-[#89918c]">اختر طلبًا من نتائج البحث لعرض أصنافه وتعديلها.</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OrderSummary({
+  todayCount,
+  confirmedCount,
+  interactive,
+  onToday,
+  onConfirmed,
+  compact = false,
+}: {
+  todayCount: number;
+  confirmedCount: number;
+  interactive: boolean;
+  onToday: () => void;
+  onConfirmed: () => void;
+  compact?: boolean;
+}) {
+  const itemClass = `grid flex-1 place-items-center ${compact ? "h-10" : "h-12"}`;
+  return (
+    <div className={`flex items-center divide-x divide-x-reverse divide-[#e2e1d8] overflow-hidden rounded-xl border border-[#e2e1d8] bg-[#fffdf8] ${compact ? "h-12 w-full px-1" : "h-14 min-w-40 px-2"}`}>
+      <button type="button" disabled={!interactive} onClick={onToday} className={`${itemClass} disabled:cursor-default`}>
+        <span className="text-[10px] font-semibold text-[#89918c]">اليوم</span>
+        <strong className="font-display text-lg leading-none text-[#173f3a]">{todayCount}</strong>
+      </button>
+      <button type="button" disabled={!interactive} onClick={onConfirmed} className={`${itemClass} disabled:cursor-default`}>
+        <span className="text-[10px] font-semibold text-[#89918c]">مؤكد</span>
+        <strong className="font-display text-lg leading-none text-[#c48738]">{confirmedCount}</strong>
+      </button>
+    </div>
+  );
+}
+
+function OrdersDialog({
+  title,
+  orders,
+  onClose,
+  onStatusChange,
+}: {
+  title: string;
+  orders: Order[];
+  onClose: () => void;
+  onStatusChange: (id: string, status: OrderStatus, currentStatus: OrderStatus) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="orders-dialog-title" onClick={onClose}>
+      <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[#e7e7df] px-5 py-4">
+          <div>
+            <h2 id="orders-dialog-title" className="font-display text-xl font-bold text-[#173f3a]">{title}</h2>
+            <p className="mt-1 text-xs text-[#89918c]">{orders.length} طلب</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="إغلاق" className="grid size-10 place-items-center rounded-lg border border-[#dedfd8] bg-white text-xl text-[#72807a]">×</button>
+        </div>
+        <div className="overflow-y-auto p-3 sm:p-5">
+          <div className="grid gap-3">
+            {orders.map((order) => (
+              <article key={order.id} className="grid gap-3 rounded-xl border border-[#e7e7df] bg-white p-4 sm:grid-cols-[100px_150px_1fr_145px] sm:items-center">
+                <strong className="font-display text-lg text-[#173f3a]">{order.id}</strong>
+                <div className="text-sm font-bold text-[#596963]">
+                  <a href={`tel:${order.phone}`} className="block">{order.phone}</a>
+                  <span className="text-xs text-[#56816c]">{order.customer_name || "بدون اسم"}</span>
+                </div>
+                <div className="text-sm font-semibold leading-6 text-[#596963]">
+                  {order.items}
+                  <small className="block text-[#89918c]">{formatOrderDate(order.created_at)}</small>
+                </div>
+                {order.status === "تم" ? (
+                  <span className="rounded-lg bg-[#e4eee5] px-3 py-2 text-center text-sm font-bold text-[#39704f]">تم</span>
+                ) : (
+                  <select value={order.status} onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus, order.status)} className="select-with-arrow rounded-lg border-0 bg-[#fff0d4] px-3 py-3 text-sm font-bold text-[#a66c20] outline-none">
+                    {orderStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                )}
+              </article>
+            ))}
+            {!orders.length && <p className="rounded-xl border border-dashed border-[#dedfd8] py-10 text-center text-sm text-[#89918c]">لا توجد طلبات في هذه القائمة.</p>}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
