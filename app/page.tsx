@@ -113,6 +113,7 @@ type SiteSettings = {
   staff_name: string;
   milestone_count: number;
   milestone_reward: number;
+  show_target_to_staff: boolean;
   reward_rate_history?: RewardRate[];
 };
 
@@ -130,6 +131,7 @@ const defaultSettings: SiteSettings = {
   staff_name: "",
   milestone_count: 1,
   milestone_reward: 1,
+  show_target_to_staff: true,
 };
 const defaultCategories: string[] = [];
 const itemAvailabilityStatuses: ItemAvailabilityStatus[] = [
@@ -1866,7 +1868,11 @@ export default function Home() {
           ) : adminTab === "targets" && userRole === "admin" ? (
             <TargetsManager orders={orders} settings={settings} />
           ) : adminTab === "targets" && userRole === "staff" ? (
-            <MyTargetCard orders={orders} settings={settings} staffName={staffName} />
+            settings.show_target_to_staff === false ? (
+              <p className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] px-5 py-8 text-center text-sm text-[#89918c]">نتائج التارجيت مخفية حاليًا من الإدارة.</p>
+            ) : (
+              <MyTargetCard orders={orders} settings={settings} staffName={staffName} />
+            )
           ) : adminTab === "edit-order" ? (
             <OrderEditor orders={orders} menuItems={menuItems} setOrders={setOrders} />
           ) : userRole === "staff" ? (
@@ -2058,6 +2064,22 @@ export default function Home() {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+              <div className="sticky top-2 z-30 mb-3 grid gap-2 rounded-2xl border border-[#d8dfd6] bg-[#fffdf9]/95 p-3 shadow-[0_8px_24px_#173f3a18] backdrop-blur">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                  <strong className="text-[#173f3a]">إحصاء الأصناف</strong>
+                  <span className="font-extrabold text-black">{filteredItemUnits} وحدة</span>
+                  <span className="text-[#72807a]">{filteredOrderItems.length} صنف</span>
+                  <span className="text-[#72807a]">{filteredOrders.length} طلب</span>
+                  {orderItem !== "الكل" && <span className="font-bold text-[#c48738]">الصنف: {orderItem}</span>}
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs font-bold">
+                  {orderStatuses.map((status) => (
+                    <span key={status} className={`rounded-full px-2.5 py-1 ${orderStatus === status ? "bg-[#173f3a] text-white" : "bg-[#eef0ea] text-[#56816c]"}`}>
+                      {status}: {filteredItemStatuses[status]}
+                    </span>
+                  ))}
                 </div>
               </div>
               <div className="overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]">
@@ -2297,7 +2319,7 @@ function OrderItemsGrid({
     (!itemStatus || (item.item_status || order.status) === itemStatus),
   );
   return (
-    <div className="grid gap-2 rounded-xl bg-[#f7f7f2] p-2">
+    <div className="grid gap-1.5 rounded-xl bg-[#f7f7f2] p-1.5 sm:gap-2 sm:p-2">
       {items.length ? items.map((item) => {
         const status = item.item_status || order.status;
         const statusClass = {
@@ -2310,17 +2332,17 @@ function OrderItemsGrid({
           "طلب مرفوض": "border-[#d0c5c5] bg-[#f4eeee] text-[#754f4f]",
         }[status];
         return (
-          <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_72px_150px] items-center gap-3 rounded-lg border border-[#d9ddd5] bg-white px-4 py-2.5 text-sm shadow-sm">
-            <span className="flex min-w-0 items-center gap-2 break-words text-sm font-extrabold text-black sm:text-base">
+          <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_38px_100px] items-center gap-1.5 rounded-lg border border-[#d9ddd5] bg-white px-2 py-2 text-sm shadow-sm sm:grid-cols-[minmax(0,1fr)_72px_150px] sm:gap-3 sm:px-4 sm:py-2.5">
+            <span className="flex min-w-0 items-center gap-1.5 text-xs font-extrabold text-black sm:gap-2 sm:text-base">
               <StatusIcon status={status} label={`${item.name}: ${status}`} />
               <span className="min-w-0 break-words">{item.name}</span>
             </span>
-            <span className="text-center text-sm font-bold text-black">× {item.quantity}</span>
+            <span className="text-center text-xs font-bold text-black sm:text-sm">× {item.quantity}</span>
             <div className="flex items-center gap-1.5">
               <select
                 value={status}
                 onChange={(event) => onStatusChange(order.id, event.target.value as OrderStatus, status, item.id)}
-                className={`select-with-arrow min-w-0 flex-1 rounded-lg border px-2 py-2 text-xs font-bold outline-none ${statusClass}`}
+                className={`select-with-arrow min-w-0 flex-1 rounded-lg border px-1.5 py-1.5 text-[10px] font-bold outline-none sm:px-2 sm:py-2 sm:text-xs ${statusClass}`}
                 aria-label={`حالة ${item.name}`}
               >
                 {orderStatuses.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -2363,6 +2385,17 @@ function StatusIcon({ status, label }: { status: OrderStatus; label: string }) {
   );
 }
 
+function OrderStatusIcons({ order }: { order: Order }) {
+  return (
+    <div className="flex flex-wrap items-center justify-start gap-1.5" aria-label="حالات الأصناف">
+      {(order.order_items || []).map((item) => {
+        const status = item.item_status || order.status;
+        return <StatusIcon key={item.id} status={status} label={`${item.name}: ${status}`} />;
+      })}
+    </div>
+  );
+}
+
 function OrdersDialog({
   title,
   orders,
@@ -2376,7 +2409,7 @@ function OrdersDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="orders-dialog-title" onClick={onClose}>
-      <div className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-[#e7e7df] px-5 py-4">
           <div>
             <h2 id="orders-dialog-title" className="font-display text-xl font-bold text-[#173f3a]">{title}</h2>
@@ -2385,19 +2418,28 @@ function OrdersDialog({
           <button type="button" onClick={onClose} aria-label="إغلاق" className="grid size-10 place-items-center rounded-lg border border-[#dedfd8] bg-white text-xl text-[#72807a]">×</button>
         </div>
         <div className="overflow-y-auto p-3 sm:p-5">
+          <div className="mb-2 hidden grid-cols-[80px_170px_minmax(0,1fr)_90px_100px] gap-4 px-4 text-xs font-bold text-[#89918c] sm:grid sm:px-5">
+            <span>الطلب</span>
+            <span>رقم الهاتف والعنوان</span>
+            <span>الأصناف</span>
+            <span>الإجمالي</span>
+            <span>الحالة</span>
+          </div>
           <div className="grid gap-3">
             {orders.map((order) => (
-              <article key={order.id} className="grid gap-3 rounded-xl border border-[#e7e7df] bg-white p-4 sm:grid-cols-[100px_150px_1fr_145px] sm:items-center">
-                <strong className="font-display text-lg text-[#173f3a]">{order.id}</strong>
-                <div className="text-sm font-bold text-[#596963]">
+              <article key={order.id} className="grid min-w-0 gap-3 rounded-xl border border-[#e7e7df] bg-white p-4 sm:grid-cols-[80px_170px_minmax(0,1fr)_90px_100px] sm:items-center sm:gap-4 sm:px-5">
+                <strong className="min-w-0 font-display text-lg text-[#173f3a]">{order.id}</strong>
+                <div className="min-w-0 text-sm font-bold text-[#596963]">
                   <a href={`tel:${order.phone}`} className="block">{order.phone}</a>
                   <span className="text-xs text-[#56816c]">{order.customer_name || "بدون اسم"}</span>
                   <small className="block text-xs font-semibold text-[#89918c]">{order.governorate}{order.district ? ` - ${order.district}` : ""}</small>
                 </div>
-                <div className="text-sm font-semibold leading-6 text-[#596963]">
+                <div className="min-w-0 text-sm font-semibold leading-6 text-[#596963]">
                   <OrderItemsGrid order={order} onStatusChange={onStatusChange} />
                   <small className="block text-[#89918c]">{formatOrderDate(order.created_at)}</small>
                 </div>
+                <strong className="hidden min-w-0 font-display text-lg text-[#c48738] sm:block">{order.total} جنيه</strong>
+                <div className="hidden min-w-0 sm:block"><OrderStatusIcons order={order} /></div>
               </article>
             ))}
             {!orders.length && <p className="rounded-xl border border-dashed border-[#dedfd8] py-10 text-center text-sm text-[#89918c]">لا توجد طلبات في هذه القائمة.</p>}
@@ -3213,6 +3255,15 @@ function SettingsManager({
             }
             className="mt-2 h-11 w-full rounded-xl border border-[#dedfd8] px-3 font-normal outline-none focus:border-[#173f3a]"
           />
+        </label>
+        <label className="flex items-center gap-3 rounded-xl border border-[#dedfd8] bg-[#f7f7f2] p-3 text-sm font-semibold sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={draft.show_target_to_staff !== false}
+            onChange={(event) => setDraft({ ...draft, show_target_to_staff: event.target.checked })}
+            className="size-4 accent-[#173f3a]"
+          />
+          إظهار نتائج التارجيت للموظفين
         </label>
         {draft.logo_url && (
           <div className="flex items-center gap-3 text-sm text-[#72807a] sm:col-span-2">

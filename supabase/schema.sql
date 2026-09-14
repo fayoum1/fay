@@ -53,11 +53,13 @@ create table if not exists public.site_settings (
   staff_password_hash text,
   milestone_count integer not null default 1,
   milestone_reward numeric(10, 2) not null default 1,
+  show_target_to_staff boolean not null default true,
   updated_at timestamptz not null default now()
 );
 
 alter table public.site_settings add column if not exists milestone_count integer not null default 1;
 alter table public.site_settings add column if not exists milestone_reward numeric(10, 2) not null default 1;
+alter table public.site_settings add column if not exists show_target_to_staff boolean not null default true;
 alter table public.site_settings add column if not exists staff_name text not null default '';
 alter table public.site_settings add column if not exists marketing_url text not null default '';
 alter table public.site_settings add column if not exists facebook_url text not null default '';
