@@ -140,7 +140,7 @@ const itemAvailabilityStatuses: ItemAvailabilityStatus[] = [
   "متوفر جملة فقط",
 ];
 const RADIO_STATIONS = [
-  { id: "cairo-quran", name: "إذاعة القرآن الكريم من القاهرة", url: "https://stream.radiojar.com/8s5u5tpdtwzuv" },
+  { id: "cairo-quran", name: "إذاعة القرآن الكريم من القاهرة", url: "/api/radio/cairo" },
   { id: "quran", name: "إذاعة القرآن الكريم العامة", url: "https://qurango.net/radio/mix" },
   { id: "abdulbasit", name: "عبدالباسط", url: "https://radio.mp3islam.com/listen/abdulbasit/radio.mp3" },
   { id: "sudais", name: "السديس", url: "https://radio.mp3islam.com/listen/sudais/radio.mp3" },
@@ -2311,9 +2311,9 @@ function OrderItemsGrid({
         }[status];
         return (
           <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_72px_150px] items-center gap-3 rounded-lg border border-[#d9ddd5] bg-white px-4 py-2.5 text-sm shadow-sm">
-            <span className="flex min-w-0 items-center gap-2 truncate text-base font-extrabold text-black">
+            <span className="flex min-w-0 items-center gap-2 break-words text-sm font-extrabold text-black sm:text-base">
               <StatusIcon status={status} label={`${item.name}: ${status}`} />
-              <span className="truncate">{item.name}</span>
+              <span className="min-w-0 break-words">{item.name}</span>
             </span>
             <span className="text-center text-sm font-bold text-black">× {item.quantity}</span>
             <div className="flex items-center gap-1.5">
