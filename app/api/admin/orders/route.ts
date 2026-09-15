@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAdminRole } from "@/lib/admin-auth";
 
+type OrderItem = {
+  id: number;
+  name: string;
+  quantity: number;
+  age_or_weight?: string | null;
+  [key: string]: unknown;
+};
+
+function normalizeOrderItems(value: unknown): OrderItem[] {
+  if (Array.isArray(value)) return value as OrderItem[];
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed as OrderItem[] : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function GET(request: NextRequest) {
   if (!(await getAdminRole(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,7 +29,15 @@ export async function GET(request: NextRequest) {
   const database = createClient(url, key, { auth: { persistSession: false } });
   const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json((data || []).map((order) => ({ ...order, id: `#${order.id}`, order_items: Array.isArray(order.items) ? order.items : [], items: Array.isArray(order.items) ? order.items.map((item: { name: string; age_or_weight?: string | null; quantity: number }) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${item.quantity}`).join("، ") : String(order.items) })));
+  return NextResponse.json((data || []).map((order) => {
+    const orderItems = normalizeOrderItems(order.items);
+    return {
+      ...order,
+      id: `#${order.id}`,
+      order_items: orderItems,
+      items: orderItems.map((item) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${item.quantity}`).join("، "),
+    };
+  }));
 }
 
 export async function PATCH(request: NextRequest) {
@@ -27,16 +54,23 @@ export async function PATCH(request: NextRequest) {
     if (!allowed.includes(item_status)) return NextResponse.json({ error: "Invalid item status" }, { status: 400 });
     const { data: order, error: orderError } = await database.from("orders").select("items").eq("id", id).single();
     if (orderError) return NextResponse.json({ error: orderError.message }, { status: 400 });
-    const currentItems = Array.isArray(order.items) ? order.items : [];
+    const currentItems = normalizeOrderItems(order.items);
     const updatedItems = currentItems.map((item: { id?: number; item_status?: string }) =>
       Number(item.id) === item_id ? { ...item, item_status } : item,
     );
     if (!updatedItems.some((item: { id?: number }) => Number(item.id) === item_id)) {
       return NextResponse.json({ error: "الصنف غير موجود في هذا الطلب" }, { status: 404 });
     }
-    const { error } = await database.from("orders").update({ items: updatedItems }).eq("id", id);
+    const itemStatuses = updatedItems.map((item) => item.item_status).filter((value): value is string => typeof value === "string");
+    const allItemsHaveSameStatus = itemStatuses.length === updatedItems.length && new Set(itemStatuses).size === 1;
+    const update: Record<string, unknown> = { items: updatedItems };
+    if (allItemsHaveSameStatus && allowed.includes(itemStatuses[0])) {
+      update.status = itemStatuses[0];
+      update.status_changed_at = new Date().toISOString();
+    }
+    const { error } = await database.from("orders").update(update).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-    return NextResponse.json({ success: true, items: updatedItems });
+    return NextResponse.json({ success: true, items: updatedItems, status: update.status });
   }
   if (Array.isArray(items)) {
     const { data: order, error: orderError } = await database.from("orders").select("status").eq("id", id).single();

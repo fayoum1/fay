@@ -237,9 +237,9 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [duplicateBooking, setDuplicateBooking] = useState<{
-    items: { id: string; name: string }[];
-    retryAt: string;
+    items: { id: string; name: string; status: OrderStatus; quantity: number; order_id: number }[];
   } | null>(null);
+  const [duplicateQuantities, setDuplicateQuantities] = useState<Record<string, number>>({});
   const [adminPin, setAdminPin] = useState("");
   const [loginRole, setLoginRole] = useState<UserRole>("admin");
   const [staffNameInput, setStaffNameInput] = useState("");
@@ -371,8 +371,11 @@ export default function Home() {
       return false;
     if (
       orderStatus !== "الكل" &&
-      order.status !== orderStatus &&
-      !order.order_items?.some((item) => (item.item_status || order.status) === orderStatus)
+      !order.order_items?.some(
+        (item) =>
+          (!orderItem || item.name === orderItem) &&
+          (item.item_status || order.status) === orderStatus,
+      )
     ) return false;
     return true;
   });
@@ -652,10 +655,11 @@ export default function Home() {
     const result = await response.json().catch(() => ({}));
     if (response.status === 409) {
       setNotice("");
+      const duplicateItems = Array.isArray(result.duplicateItems) ? result.duplicateItems : [];
       setDuplicateBooking({
-        items: Array.isArray(result.duplicateItems) ? result.duplicateItems : [],
-        retryAt: result.retryAt || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        items: duplicateItems,
       });
+      setDuplicateQuantities(Object.fromEntries(duplicateItems.map((item: { id: string; order_id: number; quantity: number }) => [`${item.order_id}:${item.id}`, item.quantity])));
       return;
     }
     if (!response.ok) return setNotice(result.error || "تعذر حفظ الطلب، راجع اتصال Supabase");
@@ -682,6 +686,30 @@ export default function Home() {
     setTodayOrdersCount((count) => count + 1);
     setNotice("");
     setBookingSuccess(true);
+  };
+
+  const updateDuplicateQuantities = async () => {
+    if (!duplicateBooking) return;
+    const response = await fetch("/api/orders", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phone: normalizePhone(phone),
+        changes: duplicateBooking.items.map((item) => ({
+          order_id: item.order_id,
+          item_id: Number(item.id),
+          quantity: duplicateQuantities[`${item.order_id}:${item.id}`],
+        })),
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setNotice(result.error || "تعذر تعديل كمية الحجز");
+      setDuplicateBooking(null);
+      return;
+    }
+    setDuplicateBooking(null);
+    setNotice("تم تعديل كمية الحجز الموجود بنجاح");
   };
 
   const updateOrderStatus = async (id: string, status: OrderStatus) => {
@@ -760,9 +788,17 @@ export default function Home() {
     const updatedItems = target.order_items?.map((entry) =>
       entry.id === itemId ? { ...entry, item_status: status } : entry,
     ) || [];
+    const itemStatuses = updatedItems.map((entry) => entry.item_status).filter(Boolean) as OrderStatus[];
+    const orderStatus = itemStatuses.length === updatedItems.length && new Set(itemStatuses).size === 1
+      ? itemStatuses[0]
+      : target.status;
     setOrders((current) => current.map((order) => order.id === id
       ? {
           ...order,
+          status: orderStatus,
+          status_changed_at: itemStatuses.length === updatedItems.length && new Set(itemStatuses).size === 1
+            ? new Date().toISOString()
+            : order.status_changed_at,
           order_items: updatedItems,
           items: updatedItems.map((entry) => `${entry.name}${entry.age_or_weight ? ` (${entry.age_or_weight})` : ""} × ${entry.quantity}`).join("، "),
         }
@@ -1204,14 +1240,33 @@ export default function Home() {
               تم استلام حجزك بالفعل
             </h2>
             <p className="mt-3 text-sm font-semibold leading-7 text-[#596963]">
-              وصل الشركة حجز سابق من نفس رقم الهاتف للأصناف التالية:
+              يوجد حجز نشط من نفس رقم الهاتف للأصناف التالية:
             </p>
-            <p className="mt-2 rounded-xl bg-[#f6f6f1] px-4 py-3 text-sm font-bold text-[#173f3a]">
-              {duplicateBooking.items.map((item) => item.name).join("، ") || "الصنف المحدد"}
-            </p>
-            <p className="mt-3 text-sm leading-7 text-[#72807a]">
-              لا تقلق، الحجز مسجل ولا داعي لتكراره. يمكنك حجز نفس الصنف مرة أخرى بعد الساعة
-              {" "}<strong className="text-[#a66c20]">{new Date(duplicateBooking.retryAt).toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" })}</strong>.
+            <div className="mt-2 grid gap-2 text-right">
+              {duplicateBooking.items.map((item) => {
+                const key = `${item.order_id}:${item.id}`;
+                return (
+                  <div key={key} className="rounded-xl bg-[#f6f6f1] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3 text-sm font-bold text-[#173f3a]">
+                      <span>{item.name}</span>
+                      <span className="text-[#a66c20]">{item.status}</span>
+                    </div>
+                    <label className="mt-2 flex items-center justify-between gap-3 text-xs font-semibold text-[#72807a]">
+                      الكمية الحالية
+                      <input
+                        type="number"
+                        min="1"
+                        value={duplicateQuantities[key] || item.quantity}
+                        onChange={(event) => setDuplicateQuantities((current) => ({ ...current, [key]: Math.max(1, Math.floor(Number(event.target.value) || 1)) }))}
+                        className="h-9 w-24 rounded-lg border border-[#dedfd8] bg-white text-center font-bold text-[#173f3a] outline-none focus:border-[#173f3a]"
+                      />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-xs leading-6 text-[#72807a]">
+              لا يمكن إنشاء حجز جديد للصنف أثناء وجوده في هذه الحالة. يمكنك تعديل الكمية، أو حجزه من جديد بعد أن تصبح حالته «تم» أو «طلب مرفوض».
             </p>
             <div className="mt-5 grid gap-2 sm:grid-cols-2">
               <button
@@ -1226,14 +1281,21 @@ export default function Home() {
               </button>
               <button
                 type="button"
+                onClick={() => void updateDuplicateQuantities()}
+                className="h-11 rounded-xl bg-[#c48738] text-sm font-bold text-white"
+              >
+                تعديل الكمية
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   const duplicateIds = new Set(duplicateBooking.items.map((item) => Number(item.id)));
                   setCart((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !duplicateIds.has(Number(id)))));
                   setDuplicateBooking(null);
                 }}
-                className="h-11 rounded-xl bg-[#173f3a] text-sm font-bold text-white"
+                className="h-11 rounded-xl bg-[#173f3a] text-sm font-bold text-white sm:col-span-2"
               >
-                إضافة أصناف أخرى
+                إزالة المحجوز ومتابعة الأصناف الأخرى
               </button>
             </div>
           </div>
@@ -2318,6 +2380,7 @@ function OrderItemsGrid({
     (!itemName || item.name === itemName) &&
     (!itemStatus || (item.item_status || order.status) === itemStatus),
   );
+  const hasItems = (order.order_items || []).length > 0;
   return (
     <div className="grid gap-1.5 rounded-xl bg-[#f7f7f2] p-1.5 sm:gap-2 sm:p-2">
       {items.length ? items.map((item) => {
@@ -2350,7 +2413,7 @@ function OrderItemsGrid({
             </div>
           </div>
         );
-      }) : <span className="text-xs text-[#89918c]">لا توجد تفاصيل للأصناف</span>}
+      }) : <span className="text-xs text-[#89918c]">{hasItems ? "لا توجد أصناف مطابقة للفلاتر" : "لا توجد تفاصيل للأصناف"}</span>}
     </div>
   );
 }

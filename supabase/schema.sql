@@ -231,7 +231,6 @@ set search_path = public
 as $$
 declare
   duplicate_items jsonb;
-  latest_duplicate_at timestamptz;
   created_order public.orders%rowtype;
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_phone, 0));
@@ -240,23 +239,21 @@ begin
     jsonb_agg(
       jsonb_build_object(
         'id', requested_item.value ->> 'id',
-        'name', coalesce(requested_item.value ->> 'name', 'صنف')
+        'name', coalesce(matching_order.value ->> 'name', requested_item.value ->> 'name', 'صنف'),
+        'status', coalesce(matching_order.value ->> 'item_status', matching_order.status),
+        'quantity', coalesce((matching_order.value ->> 'quantity')::integer, 0),
+        'order_id', matching_order.id
       )
-    ),
-    max(matching_order.created_at)
-  into duplicate_items, latest_duplicate_at
+    )
+  into duplicate_items
   from jsonb_array_elements(p_items) as requested_item(value)
   join lateral (
-    select existing_order.created_at
+    select existing_order.id, existing_order.status, existing_order.created_at, existing_item.value
     from public.orders as existing_order
+    cross join lateral jsonb_array_elements(existing_order.items) as existing_item(value)
     where existing_order.phone = p_phone
-      and existing_order.created_at >= now() - interval '1 hour'
-      and existing_order.status not in ('طلب مرفوض', 'غير متاح')
-      and exists (
-        select 1
-        from jsonb_array_elements(existing_order.items) as existing_item(value)
-        where existing_item.value ->> 'id' = requested_item.value ->> 'id'
-      )
+      and existing_item.value ->> 'id' = requested_item.value ->> 'id'
+      and coalesce(existing_item.value ->> 'item_status', existing_order.status) not in ('تم', 'طلب مرفوض')
     order by existing_order.created_at desc
     limit 1
   ) as matching_order on true;
@@ -264,8 +261,7 @@ begin
   if duplicate_items is not null then
     return jsonb_build_object(
       'duplicate', true,
-      'items', duplicate_items,
-      'retry_at', latest_duplicate_at + interval '1 hour'
+      'items', duplicate_items
     );
   end if;
 

@@ -58,10 +58,46 @@ export async function POST(request: Request) {
       {
         error: "تم استلام حجز سابق لنفس الصنف",
         duplicateItems: data.items || [],
-        retryAt: data.retry_at,
       },
       { status: 409 },
     );
   }
   return NextResponse.json({ id: data?.id, created_at: data?.created_at }, { status: 201 });
+}
+
+export async function PATCH(request: Request) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  const body = await request.json().catch(() => null);
+  const phone = normalizePhone(typeof body?.phone === "string" ? body.phone : "").replace(/\D/g, "");
+  const changes = Array.isArray(body?.changes) ? body.changes : [];
+  if (!/^(010|011|012|015)\d{8}$/.test(phone) || !changes.length) {
+    return NextResponse.json({ error: "بيانات تعديل الحجز غير صحيحة" }, { status: 400 });
+  }
+
+  const database = createClient(url, key, { auth: { persistSession: false } });
+  const orderIds = [...new Set(changes.map((change: { order_id?: unknown }) => Number(change.order_id)).filter(Number.isInteger))];
+  if (!orderIds.length) return NextResponse.json({ error: "لم يتم تحديد الحجز" }, { status: 400 });
+  const { data: orders, error } = await database.from("orders").select("id, phone, items, total, status").eq("phone", phone).in("id", orderIds);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  const updatedOrders = (orders || []).map((order) => {
+    const orderChanges = changes.filter((change: { order_id?: unknown }) => Number(change.order_id) === order.id);
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    const updatedItems = orderItems.map((item: { id?: number; item_status?: string; quantity?: number }) => {
+      const change = orderChanges.find((entry: { item_id?: unknown }) => Number(entry.item_id) === Number(item.id));
+      const quantity = Number(change?.quantity);
+      if (!change || !Number.isInteger(quantity) || quantity < 1 || ["تم", "طلب مرفوض"].includes(item.item_status || order.status)) return item;
+      return { ...item, quantity };
+    });
+    const total = updatedItems.reduce((sum: number, item: { final_price?: number; price?: number; quantity?: number }) => sum + (Number(item.final_price ?? item.price) || 0) * (Number(item.quantity) || 0), 0);
+    return { ...order, items: updatedItems, total };
+  });
+
+  for (const order of updatedOrders) {
+    const { error: updateError } = await database.from("orders").update({ items: order.items, total: order.total }).eq("id", order.id).eq("phone", phone);
+    if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
+  }
+  return NextResponse.json({ success: true });
 }
