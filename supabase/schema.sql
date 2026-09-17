@@ -192,6 +192,9 @@ create table if not exists public.orders (
   total numeric(10, 2) not null default 0,
   status text not null default 'قيد التنفيذ' check (status in ('حجز مؤكد', 'قادم', 'قيد التنفيذ', 'تم', 'لم يرد', 'غير متاح', 'طلب مرفوض')),
   status_changed_at timestamptz not null default now(),
+  booking_source text not null default 'عبر الأونلاين',
+  booking_staff_name text,
+  status_changed_by text,
   created_at timestamptz not null default now()
 );
 
@@ -201,6 +204,9 @@ alter table public.orders add column if not exists governorate text not null def
 alter table public.orders add column if not exists district text;
 alter table public.orders add column if not exists staff_name text;
 alter table public.orders add column if not exists admin_reverted boolean not null default false;
+alter table public.orders add column if not exists booking_source text not null default 'عبر الأونلاين';
+alter table public.orders add column if not exists booking_staff_name text;
+alter table public.orders add column if not exists status_changed_by text;
 alter table public.orders drop constraint if exists orders_phone_check;
 alter table public.orders add constraint orders_phone_check check (phone ~ '^(010|011|012|015)[0-9]{8}$') not valid;
 
@@ -216,13 +222,16 @@ create policy "items are readable" on public.items for select using (active = tr
 create policy "admins can read orders" on public.orders for select using (true);
 create policy "admins can update orders" on public.orders for update using (true);
 
+drop function if exists public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric);
+
 create or replace function public.create_order_without_duplicate_items(
   p_customer_name text,
   p_phone text,
   p_governorate text,
   p_district text,
   p_items jsonb,
-  p_total numeric
+  p_total numeric,
+  p_booking_staff_name text default null
 )
 returns jsonb
 language plpgsql
@@ -272,7 +281,9 @@ begin
     district,
     items,
     total,
-    status
+    status,
+    booking_source,
+    booking_staff_name
   ) values (
     p_customer_name,
     p_phone,
@@ -280,7 +291,9 @@ begin
     p_district,
     p_items,
     p_total,
-    'قيد التنفيذ'
+    'قيد التنفيذ',
+    case when p_booking_staff_name is null or trim(p_booking_staff_name) = '' then 'عبر الأونلاين' else 'بواسطة موظف' end,
+    nullif(trim(p_booking_staff_name), '')
   )
   returning * into created_order;
 
@@ -292,8 +305,8 @@ begin
 end;
 $$;
 
-revoke all on function public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric) from public, anon, authenticated;
-grant execute on function public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric) to service_role;
+revoke all on function public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric, text) from public, anon, authenticated;
+grant execute on function public.create_order_without_duplicate_items(text, text, text, text, jsonb, numeric, text) to service_role;
 
 -- Refresh PostgREST after applying this schema in Supabase SQL Editor.
 notify pgrst, 'reload schema';

@@ -11,10 +11,17 @@ export async function GET(request: NextRequest) {
   const database = createClient(url, key, { auth: { persistSession: false } });
   const { count, error } = await database.from("orders").select("id", { count: "exact", head: true }).gte("created_at", from).lt("created_at", to);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const { count: confirmedCount, error: confirmedError } = await database
+  const { data: confirmedOrders, error: confirmedError } = await database
     .from("orders")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["حجز مؤكد", "قادم"]);
+    .select("status, items");
   if (confirmedError) return NextResponse.json({ error: confirmedError.message }, { status: 500 });
-  return NextResponse.json({ count: count || 0, confirmedCount: confirmedCount || 0 });
+  const confirmedCount = (confirmedOrders || []).filter((order) => {
+    if (!Array.isArray(order.items) || !order.items.length) return order.status === "حجز مؤكد" || order.status === "قادم";
+    return order.items.some((item) =>
+      (item as { item_status?: string }).item_status === "حجز مؤكد" ||
+      (item as { item_status?: string }).item_status === "قادم" ||
+      (!(item as { item_status?: string }).item_status && (order.status === "حجز مؤكد" || order.status === "قادم")),
+    );
+  }).length;
+  return NextResponse.json({ count: count || 0, confirmedCount });
 }

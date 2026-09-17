@@ -55,6 +55,9 @@ type Order = {
   created_at: string;
   status_changed_at?: string;
   staff_name?: string;
+  booking_source?: string;
+  booking_staff_name?: string;
+  status_changed_by?: string;
   admin_reverted?: boolean;
   order_items?: {
     id: number;
@@ -220,6 +223,29 @@ function computeViolationWindows(orders: Order[]) {
 
 function isWithinPenalty(date: Date, windows: { start: Date; end: Date }[]) {
   return windows.some((window) => date >= window.start && date <= window.end);
+}
+
+function OrderAttribution({ order }: { order: Order }) {
+  return (
+    <div className="mt-1 text-xs font-semibold leading-5 text-[#89918c]">
+      <span>الحجز: {order.booking_staff_name || order.booking_source || "عبر الأونلاين"}</span>
+      <span className="mx-1">|</span>
+      <span>آخر تغيير: {order.status_changed_by || (order.status === "تم" ? order.staff_name : null) || "غير مسجل"}</span>
+    </div>
+  );
+}
+
+function getConfirmedOrders(orders: Order[]) {
+  return orders.flatMap((order) => {
+    if (!order.order_items?.length) {
+      return order.status === "حجز مؤكد" || order.status === "قادم" ? [order] : [];
+    }
+    const confirmedItems = order.order_items.filter((item) =>
+      item.item_status === "حجز مؤكد" || item.item_status === "قادم" ||
+      (!item.item_status && (order.status === "حجز مؤكد" || order.status === "قادم")),
+    );
+    return confirmedItems.length ? [{ ...order, order_items: confirmedItems }] : [];
+  });
 }
 
 export default function Home() {
@@ -390,10 +416,7 @@ export default function Home() {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const todayOrders = orders.filter((order) => new Date(order.created_at) >= startOfToday);
-  const confirmedOrders = orders.filter((order) =>
-    order.status === "حجز مؤكد" || order.status === "قادم" ||
-    order.order_items?.some((item) => item.item_status === "حجز مؤكد" || item.item_status === "قادم"),
-  );
+  const confirmedOrders = getConfirmedOrders(orders);
   const filteredOrderItems = filteredOrders.flatMap((order) =>
     (order.order_items || []).filter((item) =>
       (orderItem === "الكل" || item.name === orderItem) &&
@@ -542,9 +565,7 @@ export default function Home() {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             setTodayOrdersCount(data.filter((order: Order) => new Date(order.created_at) >= today).length);
-            setConfirmedOrdersCount(
-              data.filter((order: Order) => order.status === "حجز مؤكد" || order.status === "قادم").length,
-            );
+            setConfirmedOrdersCount(getConfirmedOrders(data).length);
           }
         })
         .catch(() => undefined);
@@ -675,6 +696,8 @@ export default function Home() {
         status: "قيد التنفيذ",
         created_at: new Date().toISOString(),
         status_changed_at: new Date().toISOString(),
+        booking_source: staffName ? "بواسطة موظف" : "عبر الأونلاين",
+        booking_staff_name: staffName || undefined,
       },
       ...current,
     ]);
@@ -734,6 +757,7 @@ export default function Home() {
               ...order,
               status,
               status_changed_at: changedAt,
+              status_changed_by: userRole === "staff" ? staffName : "الأدمن",
               staff_name:
                 userRole === "staff" && status === "تم" && staffName ? staffName : order.staff_name,
               admin_reverted:
@@ -782,7 +806,12 @@ export default function Home() {
     const response = await fetch("/api/admin/orders", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: numericId, item_id: itemId, item_status: status }),
+      body: JSON.stringify({
+        id: numericId,
+        item_id: itemId,
+        item_status: status,
+        staff_name: userRole === "staff" && status === "تم" ? staffName : undefined,
+      }),
     });
     if (!response.ok) return;
     const updatedItems = target.order_items?.map((entry) =>
@@ -796,6 +825,9 @@ export default function Home() {
       ? {
           ...order,
           status: orderStatus,
+          status_changed_by: userRole === "staff" ? staffName : "الأدمن",
+          staff_name:
+            userRole === "staff" && orderStatus === "تم" && staffName ? staffName : order.staff_name,
           status_changed_at: itemStatuses.length === updatedItems.length && new Set(itemStatuses).size === 1
             ? new Date().toISOString()
             : order.status_changed_at,
@@ -2045,6 +2077,7 @@ export default function Home() {
                       {formatOrderDate(order.created_at)}
                     </small>
                     <small className="mr-2 block text-xs font-bold text-[#c48738]">{formatRelativeTime(order.status_changed_at || order.created_at, currentTime)}</small>
+                    <OrderAttribution order={order} />
                   </span>
                   <span className="font-display text-lg font-extrabold tabular-nums text-[#c48738]">
                     {order.total} جنيه
@@ -2184,6 +2217,7 @@ export default function Home() {
                         {formatOrderDate(order.created_at)}
                       </small>
                       <small className="mr-2 block text-xs font-bold text-[#c48738]">{formatRelativeTime(order.status_changed_at || order.created_at, currentTime)}</small>
+                      <OrderAttribution order={order} />
                     </span>
                     <span className="font-display text-lg font-extrabold tabular-nums text-[#c48738]">
                       {order.total} جنيه
@@ -2500,6 +2534,7 @@ function OrdersDialog({
                 <div className="min-w-0 text-sm font-semibold leading-6 text-[#596963]">
                   <OrderItemsGrid order={order} onStatusChange={onStatusChange} />
                   <small className="block text-[#89918c]">{formatOrderDate(order.created_at)}</small>
+                  <OrderAttribution order={order} />
                 </div>
                 <strong className="hidden min-w-0 font-display text-lg text-[#c48738] sm:block">{order.total} جنيه</strong>
                 <div className="hidden min-w-0 sm:block"><OrderStatusIcons order={order} /></div>

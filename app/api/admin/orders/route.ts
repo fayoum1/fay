@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAdminRole } from "@/lib/admin-auth";
+import { getSessionIdentity } from "@/lib/admin-auth";
 
 type OrderItem = {
   id: number;
@@ -22,7 +22,7 @@ function normalizeOrderItems(value: unknown): OrderItem[] {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await getAdminRole(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await getSessionIdentity(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
@@ -41,9 +41,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const role = await getAdminRole(request);
-  if (!role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { id, status, staff_name, previous_status, items, item_id, item_status } = await request.json();
+  const identity = await getSessionIdentity(request);
+  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { role } = identity;
+  const { id, status, previous_status, items, item_id, item_status } = await request.json();
   const allowed = ["حجز مؤكد", "قادم", "قيد التنفيذ", "تم", "لم يرد", "غير متاح", "طلب مرفوض"];
   if (!Number.isInteger(id)) return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -52,7 +53,7 @@ export async function PATCH(request: NextRequest) {
   const database = createClient(url, key, { auth: { persistSession: false } });
   if (Number.isInteger(item_id)) {
     if (!allowed.includes(item_status)) return NextResponse.json({ error: "Invalid item status" }, { status: 400 });
-    const { data: order, error: orderError } = await database.from("orders").select("items").eq("id", id).single();
+    const { data: order, error: orderError } = await database.from("orders").select("items,status").eq("id", id).single();
     if (orderError) return NextResponse.json({ error: orderError.message }, { status: 400 });
     const currentItems = normalizeOrderItems(order.items);
     const updatedItems = currentItems.map((item: { id?: number; item_status?: string }) =>
@@ -63,12 +64,25 @@ export async function PATCH(request: NextRequest) {
     }
     const itemStatuses = updatedItems.map((item) => item.item_status).filter((value): value is string => typeof value === "string");
     const allItemsHaveSameStatus = itemStatuses.length === updatedItems.length && new Set(itemStatuses).size === 1;
-    const update: Record<string, unknown> = { items: updatedItems };
+    const update: Record<string, unknown> = {
+      items: updatedItems,
+      status_changed_at: new Date().toISOString(),
+      status_changed_by: identity.staffName || "الأدمن",
+    };
     if (allItemsHaveSameStatus && allowed.includes(itemStatuses[0])) {
       update.status = itemStatuses[0];
-      update.status_changed_at = new Date().toISOString();
+      if (role === "staff" && itemStatuses[0] === "تم" && identity.staffName) {
+        update.staff_name = identity.staffName;
+        update.admin_reverted = false;
+      }
     }
-    const { error } = await database.from("orders").update(update).eq("id", id);
+    let { error } = await database.from("orders").update(update).eq("id", id);
+    if (error && /staff_name|admin_reverted|status_changed_by/.test(error.message)) {
+      delete update.staff_name;
+      delete update.admin_reverted;
+      delete update.status_changed_by;
+      ({ error } = await database.from("orders").update(update).eq("id", id));
+    }
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ success: true, items: updatedItems, status: update.status });
   }
@@ -97,16 +111,21 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, items: updatedItems, total });
   }
   if (!allowed.includes(status)) return NextResponse.json({ error: "Invalid status" }, { status: 400 });
-  const update: Record<string, unknown> = { status, status_changed_at: new Date().toISOString() };
-  if (role === "staff" && status === "تم" && typeof staff_name === "string" && staff_name.trim()) {
-    update.staff_name = staff_name.trim();
+  const update: Record<string, unknown> = {
+    status,
+    status_changed_at: new Date().toISOString(),
+    status_changed_by: identity.staffName || "الأدمن",
+  };
+  if (role === "staff" && status === "تم" && identity.staffName) {
+    update.staff_name = identity.staffName;
     update.admin_reverted = false;
   }
   if (role === "admin" && previous_status === "تم" && status !== "تم") update.admin_reverted = true;
   let { error } = await database.from("orders").update(update).eq("id", id);
-  if (error && /staff_name|admin_reverted/.test(error.message)) {
+  if (error && /staff_name|admin_reverted|status_changed_by/.test(error.message)) {
     delete update.staff_name;
     delete update.admin_reverted;
+    delete update.status_changed_by;
     ({ error } = await database.from("orders").update(update).eq("id", id));
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
@@ -116,7 +135,8 @@ export async function PATCH(request: NextRequest) {
 
 
 export async function DELETE(request: NextRequest) {
-  if (await getAdminRole(request) !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const identity = await getSessionIdentity(request);
+  if (identity?.role !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await request.json().catch(() => ({ id: null }));
   if (!Number.isInteger(id)) return NextResponse.json({ error: "Invalid order id" }, { status: 400 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

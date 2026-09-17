@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSessionIdentity } from "@/lib/admin-auth";
 
 function normalizePhone(value: string) {
   return value.replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
@@ -35,6 +36,8 @@ export async function POST(request: Request) {
   }
 
   const database = createClient(url, key, { auth: { persistSession: false } });
+  const identity = await getSessionIdentity(request);
+  const bookingStaffName = identity?.role === "staff" ? identity.staffName || null : null;
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { count, error: countError } = await database
     .from("orders")
@@ -51,6 +54,7 @@ export async function POST(request: Request) {
     p_district: body.district || null,
     p_items: body.items,
     p_total: Number(body.total) || 0,
+    p_booking_staff_name: bookingStaffName,
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   if (data?.duplicate) {
