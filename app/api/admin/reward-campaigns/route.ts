@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const { data, error } = await client.from("ad_reward_campaigns").insert({ advertisement_id: advertisementId, name, reward_mode: rewardMode, budget, max_recipients: maxRecipients, per_user_limit: perUserLimit, status: "draft" }).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const { error: actionError } = await client.from("ad_reward_actions").insert({ campaign_id: data.id, action_type: actionType, reward_points: rewardPoints, reward_amount: rewardAmount, reward_label: String(body.reward_label || "").trim().slice(0, 120) || null, required_seconds: actionType === "view" && Number(body.required_seconds) > 0 ? Number(body.required_seconds) : null, enabled: true });
+  const { error: actionError } = await client.from("ad_reward_actions").insert({ campaign_id: data.id, action_type: actionType, reward_points: rewardPoints, reward_amount: rewardAmount, reward_label: String(body.reward_label || "").trim().slice(0, 120) || null, required_seconds: actionType === "view" ? Math.max(1, Number(body.required_seconds) || 30) : null, enabled: true });
   if (actionError) return NextResponse.json({ error: actionError.message }, { status: 400 });
   return NextResponse.json(data, { status: 201 });
 }

@@ -25,6 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "الإعلان غير متاح" }, { status: 404 });
   const { count: likes } = await client.from("advertisement_engagements").select("id", { count: "exact", head: true }).eq("advertisement_id", id).eq("event_type", "like");
+  const { data: viewAction } = await client.from("ad_reward_campaigns").select("id,ad_reward_actions(required_seconds)").eq("advertisement_id", id).eq("status", "active").eq("ad_reward_actions.action_type", "view").maybeSingle();
   const { data: otherAds } = await client
     .from("advertisements")
     .select("id,advertiser_name,title,description,media_type,image_url,video_url,target_url,whatsapp")
@@ -35,5 +36,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .or(`starts_at.is.null,starts_at.lte.${now}`)
     .or(`ends_at.is.null,ends_at.gte.${now}`)
     .order("created_at", { ascending: false });
-  return NextResponse.json({ ...data, likes: likes || 0, other_ads: otherAds || [] });
+  const watchRequiredSeconds = Number(viewAction?.ad_reward_actions?.[0]?.required_seconds || 0);
+  return NextResponse.json({ ...data, likes: likes || 0, watch_required_seconds: watchRequiredSeconds || null, other_ads: otherAds || [] });
 }

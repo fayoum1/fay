@@ -18,6 +18,7 @@ type Advertisement = {
   views?: number;
   clicks?: number;
   likes?: number;
+  watch_required_seconds?: number | null;
   other_ads?: Advertisement[];
 };
 
@@ -25,6 +26,7 @@ export default function AdvertisementProfile({ params, searchParams }: { params:
   const [advertisement, setAdvertisement] = useState<Advertisement | null>(null);
   const [error, setError] = useState("");
   const [liked, setLiked] = useState(false);
+  const [watchRewardSent, setWatchRewardSent] = useState(false);
   const [referralCode, setReferralCode] = useState("");
   const [shareMessage, setShareMessage] = useState("");
 
@@ -37,6 +39,12 @@ export default function AdvertisementProfile({ params, searchParams }: { params:
   };
 
   const engage = (id: number, eventType: "view" | "click" | "like") => fetch(`/api/advertisements/${id}/engagement`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event_type: eventType, visitor_key: visitorKey() }) }).then((response) => response.ok ? response.json() : null);
+
+  const submitWatchReward = (seconds: number) => {
+    if (watchRewardSent || !advertisement?.watch_required_seconds || seconds < advertisement.watch_required_seconds) return;
+    setWatchRewardSent(true);
+    void fetch(`/api/advertisements/${advertisement.id}/watch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ watched_seconds: Math.floor(seconds) }) }).catch(() => undefined);
+  };
 
   useEffect(() => {
     Promise.all([params, searchParams]).then(([{ id }, { ref }]) => {
@@ -76,7 +84,7 @@ export default function AdvertisementProfile({ params, searchParams }: { params:
         <Link href="/" className="mb-5 inline-flex items-center gap-2 rounded-lg border border-[#dedfd8] bg-white px-3 py-2 text-sm font-bold text-[#173f3a]"><ArrowRight size={16} /> الرئيسية</Link>
         <article className="overflow-hidden rounded-xl border border-[#dedfd8] bg-[#fffdf9] shadow-[0_12px_32px_#173f3a0d]">
           <div className="border-b border-[#e7e7df] p-5 sm:p-7"><p className="text-xs font-bold text-[#c48738]">إعلان ممول</p><h1 className="mt-2 font-display text-2xl font-bold text-[#173f3a] sm:text-3xl">{advertisement.title}</h1><p className="mt-2 text-sm text-[#72807a]">بواسطة: <strong className="text-[#596963]">{advertisement.advertiser_name}</strong></p></div>
-          {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} controls playsInline className="aspect-video w-full bg-black object-contain" /> : advertisement.image_url && <img src={advertisement.image_url} alt={advertisement.title} className="aspect-video w-full bg-[#eef0ea] object-contain" />}
+          {advertisement.media_type === "video" && advertisement.video_url ? <div><video src={advertisement.video_url} controls playsInline onTimeUpdate={(event) => submitWatchReward(event.currentTarget.currentTime)} className="aspect-video w-full bg-black object-contain" />{advertisement.watch_required_seconds && <p className="px-5 py-2 text-xs font-bold text-[#72807a]">شاهد الفيديو لمدة {advertisement.watch_required_seconds} ثانية للحصول على مكافأة الحملة إن كنت مسجلًا.</p>}</div> : advertisement.image_url && <img src={advertisement.image_url} alt={advertisement.title} className="aspect-video w-full bg-[#eef0ea] object-contain" />}
           <div className="p-5 sm:p-7"><p className="whitespace-pre-line text-base leading-8 text-[#596963]">{advertisement.description}</p><div className="mt-5 flex items-center gap-3 text-xs font-bold text-[#89918c]"><span>المشاهدات: {advertisement.views || 0}</span><span>النقرات: {advertisement.clicks || 0}</span><span>الإعجابات: {advertisement.likes || 0}</span></div><div className="mt-6 flex flex-wrap gap-2">{whatsapp && <a onClick={() => void engage(advertisement.id, "click")} href={`https://wa.me/${whatsapp}`} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#25a866] px-4 text-sm font-bold text-white"><MessageCircle size={17} /> واتساب</a>}{whatsapp && <a onClick={() => void engage(advertisement.id, "click")} href={`tel:${whatsapp}`} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white"><Phone size={17} /> اتصال</a>}{advertisement.target_url && <a onClick={() => void engage(advertisement.id, "click")} href={advertisement.target_url} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#dedfd8] bg-white px-4 text-sm font-bold text-[#173f3a]"><ExternalLink size={17} /> الرابط الخارجي</a>}<button type="button" onClick={() => void shareAdvertisement()} className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#dedfd8] bg-white px-4 text-sm font-bold text-[#173f3a]"><Share2 size={17} /> مشاركة</button><button type="button" onClick={() => void engage(advertisement.id, "like").then((result) => { if (result?.counted) { setLiked(true); setAdvertisement((current) => current ? { ...current, likes: (current.likes || 0) + 1 } : current); } })} className={`inline-flex h-11 items-center gap-2 rounded-lg px-4 text-sm font-bold ${liked ? "bg-[#f7d6df] text-[#934563]" : "border border-[#dedfd8] bg-white text-[#173f3a]"}`}><Heart size={17} fill={liked ? "currentColor" : "none"} /> {liked ? "تم الإعجاب" : "إعجاب"}</button></div>{shareMessage && <p className="mt-3 text-xs font-bold text-[#39704f]">{shareMessage}</p>}</div>
         </article>
         {!!advertisement.other_ads?.length && <section className="mt-5"><h2 className="mb-3 font-display text-xl font-bold text-[#173f3a]">إعلانات أخرى للمعلن</h2><div className="grid gap-3 sm:grid-cols-2">{advertisement.other_ads.map((item) => <Link key={item.id} href={`/ads/${item.id}`} className="rounded-lg border border-[#dedfd8] bg-[#fffdf9] p-4"><p className="font-bold text-[#173f3a]">{item.title}</p><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#72807a]">{item.description}</p></Link>)}</div></section>}
