@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa6";
 import {
   Check,
@@ -3246,16 +3247,16 @@ function MarketingManager({
 
 function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertisement[] }) {
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]" aria-label="الإعلانات المقبولة">
+    <div className="mb-4 overflow-hidden rounded-lg border border-[#d8dfd6] bg-[#fffdf9]" aria-label="الإعلانات المقبولة">
       <div className="advertisement-strip flex w-max min-w-full items-center gap-3 p-2">
         {[...advertisements, ...advertisements].map((advertisement, index) => {
           const content = (
-            <div className="flex h-20 w-[min(78vw,420px)] shrink-0 items-center gap-3 rounded-xl border border-[#e7e7df] bg-white px-3 text-right">
-              {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="size-14 shrink-0 rounded-lg object-cover" /> : advertisement.image_url && <img src={advertisement.image_url} alt="" className="size-14 shrink-0 rounded-lg object-cover" />}
-              <div className="min-w-0"><p className="text-[10px] font-bold text-[#c48738]">إعلان ممول</p><p className="truncate text-sm font-bold text-[#173f3a]">{advertisement.title}</p><p className="line-clamp-2 text-xs text-[#72807a]">{advertisement.description}</p></div>
+            <div className="grid h-[124px] w-[min(92vw,560px)] shrink-0 grid-cols-[176px_minmax(0,1fr)] items-center gap-4 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
+              {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="aspect-video w-[176px] rounded-md bg-[#eef0ea] object-cover" /> : advertisement.image_url ? <img src={advertisement.image_url} alt="" className="aspect-video w-[176px] rounded-md bg-[#eef0ea] object-cover" /> : <div className="grid aspect-video w-[176px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
+              <div className="min-w-0 space-y-1"><p className="text-[10px] font-bold text-[#a66c20]">إعلان ممول</p><p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p><p className="line-clamp-3 text-xs leading-5 text-[#596963]">{advertisement.description}</p></div>
             </div>
           );
-          return advertisement.target_url ? <a key={`${advertisement.id}-${index}`} href={advertisement.target_url} target="_blank" rel="noreferrer">{content}</a> : <div key={`${advertisement.id}-${index}`}>{content}</div>;
+          return <Link key={`${advertisement.id}-${index}`} href={`/ads/${advertisement.id}`}>{content}</Link>;
         })}
       </div>
     </div>
@@ -3271,7 +3272,7 @@ function FeaturedAdvertisement({ advertisement, onClose }: { advertisement: Publ
         <h2 className="mt-2 font-display text-2xl font-bold text-[#173f3a]">{advertisement.title}</h2>
         {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} controls playsInline className="mt-4 max-h-64 w-full rounded-xl object-cover" /> : advertisement.image_url && <img src={advertisement.image_url} alt="" className="mt-4 max-h-64 w-full rounded-xl object-cover" />}
         <p className="mt-3 leading-7 text-[#596963]">{advertisement.description}</p>
-        {advertisement.target_url && <a href={advertisement.target_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex h-11 items-center rounded-xl bg-[#c48738] px-5 text-sm font-bold text-white">معرفة المزيد</a>}
+        <Link href={`/ads/${advertisement.id}`} className="mt-4 inline-flex h-11 items-center rounded-xl bg-[#c48738] px-5 text-sm font-bold text-white">عرض ملف المعلن</Link>
       </div>
     </div>
   );
@@ -3332,7 +3333,7 @@ function AdvertisementsManager() {
 }
 
 function AdvertisementOperations() {
-  const [items, setItems] = useState<Array<{ id: number; title: string; status: string; payment_status: string; featured: boolean; media_type?: string; image_url?: string | null; video_url?: string | null }>>([]);
+  const [items, setItems] = useState<Array<{ id: number; title: string; status: string; payment_status: string; featured: boolean; media_type?: string; image_url?: string | null; video_url?: string | null; views?: number; clicks?: number; likes?: number }>>([]);
   const [packages, setPackages] = useState<Array<{ id: number; name: string; duration_days: number; price: number; active: boolean }>>([]);
   const [message, setMessage] = useState("");
 
@@ -3361,6 +3362,7 @@ function AdvertisementOperations() {
   return (
     <section className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
       <div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">تحكم سريع</p><h2 className="font-display text-xl font-bold text-[#173f3a]">الدفع والتشغيل والباقات</h2></div>
+      <div className="mb-3 grid gap-2 sm:grid-cols-2">{items.map((item) => <div key={`stats-${item.id}`} className="rounded-lg bg-[#f7faf6] px-3 py-2 text-xs font-bold text-[#72807a]">{item.title}: مشاهدات {item.views || 0} | نقرات {item.clicks || 0} | إعجابات {item.likes || 0}</div>)}</div>
       <div className="grid gap-2">{items.map((item) => <div key={item.id} className="grid gap-2 rounded-xl border border-[#e7e7df] bg-white p-3 sm:grid-cols-[minmax(180px,1fr)_150px_150px_auto]"><div><span className="text-sm font-bold text-[#173f3a]">{item.title}</span>{item.media_type === "video" && item.video_url ? <video src={item.video_url} controls playsInline className="mt-2 max-h-32 w-full rounded-lg object-contain" /> : item.image_url && <img src={item.image_url} alt="" className="mt-2 max-h-32 w-full rounded-lg object-contain" />}</div><select value={item.payment_status} onChange={(event) => void patch({ id: item.id, status: item.status, payment_status: event.target.value, featured: item.featured })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option>غير مطلوب</option><option>قيد الانتظار</option><option>تم الدفع</option><option>مرفوض</option></select><select value={item.status} onChange={(event) => void patch({ id: item.id, status: event.target.value, payment_status: item.payment_status, featured: item.featured })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option>قيد المراجعة</option><option>مقبول</option><option>متوقف</option><option>مرفوض</option><option>منتهي</option></select><button type="button" onClick={() => void remove("advertisement", item.id)} className="h-9 rounded-lg border border-[#a9584d] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div>)}</div>
       <div className="mt-5 grid gap-2">{packages.map((item) => <div key={item.id} className="grid gap-2 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3 sm:grid-cols-[1fr_100px_100px_110px_auto_auto]"><input defaultValue={item.name} onBlur={(event) => void patch({ entity: "package", id: item.id, name: event.target.value })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><input defaultValue={item.duration_days} type="number" min="1" onBlur={(event) => void patch({ entity: "package", id: item.id, duration_days: Number(event.target.value) })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><input defaultValue={item.price} type="number" min="0" step="0.01" onBlur={(event) => void patch({ entity: "package", id: item.id, price: Number(event.target.value) })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><span className="grid place-items-center text-xs font-bold">{item.active ? "فعالة" : "متوقفة"}</span><button type="button" onClick={() => void patch({ entity: "package", id: item.id, active: !item.active })} className="h-9 rounded-lg bg-[#173f3a] px-3 text-xs font-bold text-white">{item.active ? "إيقاف" : "تشغيل"}</button><button type="button" onClick={() => void remove("package", item.id)} className="h-9 rounded-lg border border-[#a9584d] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div>)}</div>
       {message && <p className="mt-3 text-center text-sm font-bold text-[#a9584d]">{message}</p>}

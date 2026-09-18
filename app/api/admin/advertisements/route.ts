@@ -17,7 +17,15 @@ export async function GET(request: NextRequest) {
     client.from("advertisement_packages").select("*").order("price"),
   ]);
   if (error || packageError) return NextResponse.json({ error: error?.message || packageError?.message }, { status: 500 });
-  return NextResponse.json({ advertisements: advertisements || [], packages: packages || [] });
+  const adsWithLikes = await Promise.all((advertisements || []).map(async (advertisement) => {
+    const { count } = await client
+      .from("advertisement_engagements")
+      .select("id", { count: "exact", head: true })
+      .eq("advertisement_id", advertisement.id)
+      .eq("event_type", "like");
+    return { ...advertisement, likes: count || 0 };
+  }));
+  return NextResponse.json({ advertisements: adsWithLikes, packages: packages || [] });
 }
 
 export async function PATCH(request: NextRequest) {

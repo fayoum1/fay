@@ -71,6 +71,7 @@ body {
 }
 
 .advertisement-strip {
+  will-change: transform;
   animation: advertisement-scroll 28s linear infinite;
 }
 

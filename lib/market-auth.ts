@@ -31,11 +31,19 @@ function tokenForUser(id: number, passwordHash: string) {
   return `${id}.${createHmac("sha256", passwordHash).update("market-session").digest("hex")}`;
 }
 
+async function ensureReferralCode(client: ReturnType<typeof database>, user: { id: number; referral_code?: string | null }) {
+  if (!client || user.referral_code) return user.referral_code || null;
+  const referralCode = randomBytes(8).toString("hex");
+  const { error } = await client.from("market_users").update({ referral_code: referralCode }).eq("id", user.id).is("referral_code", null);
+  return error ? null : referralCode;
+}
+
 export async function authenticateMarketUser(phone: string, password: string) {
   const client = database();
   if (!client) return null;
-  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,receive_offers").eq("phone", phone).eq("active", true).maybeSingle();
+  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,receive_offers,referral_code").eq("phone", phone).eq("active", true).maybeSingle();
   if (!data || !verifyMarketPassword(password, data.password_hash)) return null;
+  data.referral_code = await ensureReferralCode(client, data);
   return { ...data, token: tokenForUser(data.id, data.password_hash) };
 }
 
@@ -47,8 +55,9 @@ export async function getMarketUser(request: NextRequest) {
   if (!Number.isInteger(id) || !signature) return null;
   const client = database();
   if (!client) return null;
-  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,receive_offers").eq("id", id).eq("active", true).maybeSingle();
+  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,receive_offers,referral_code").eq("id", id).eq("active", true).maybeSingle();
   if (!data || signature !== createHmac("sha256", data.password_hash).update("market-session").digest("hex")) return null;
+  data.referral_code = await ensureReferralCode(client, data);
   return data;
 }
 
