@@ -43,6 +43,14 @@ export async function POST(request: NextRequest) {
     const validType = isVideo ? media.type.startsWith("video/") : media.type.startsWith("image/");
     const maxSize = isVideo ? 20 * 1024 * 1024 : 5 * 1024 * 1024;
     if (!validType || media.size > maxSize) return NextResponse.json({ error: isVideo ? "الفيديو يجب أن يكون أقل من 20 ميجابايت" : "الصورة يجب أن تكون أقل من 5 ميجابايت" }, { status: 400 });
+    const width = Number(form.get("media_width"));
+    const height = Number(form.get("media_height"));
+    const ratio = width / height;
+    const minimumWidth = isVideo ? 720 : 1280;
+    const minimumHeight = isVideo ? 405 : 720;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < minimumWidth || height < minimumHeight || Math.abs(ratio - 16 / 9) > 0.03) {
+      return NextResponse.json({ error: isVideo ? "الفيديو يجب أن يكون بنسبة 16:9 وبمقاس لا يقل عن 720×405" : "الصورة يجب أن تكون بنسبة 16:9 وبمقاس لا يقل عن 1280×720" }, { status: 400 });
+    }
     const path = `ads/${Date.now()}-${media.name.replace(/[^a-zA-Z0-9._-]/g, "")}`;
     const upload = await client.storage.from("item-images").upload(path, media, { contentType: media.type, upsert: false });
     if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 400 });

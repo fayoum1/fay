@@ -13,6 +13,17 @@ type AdPackage = { id: number; name: string; duration_days: number; price: numbe
 
 const roleLabels: Record<string, string> = { farm_owner: "صاحب مزرعة", trader: "تاجر", supplier: "مورد" };
 
+function getMediaDimensions(file: File) {
+  return new Promise<{ width: number; height: number } | null>((resolve) => {
+    const url = URL.createObjectURL(file);
+    const element = file.type.startsWith("video/") ? document.createElement("video") : document.createElement("img");
+    element.onload = () => { URL.revokeObjectURL(url); resolve({ width: (element as HTMLImageElement).naturalWidth, height: (element as HTMLImageElement).naturalHeight }); };
+    if (element instanceof HTMLVideoElement) element.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve({ width: element.videoWidth, height: element.videoHeight }); };
+    element.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    element.src = url;
+  });
+}
+
 function PublicAdGallery({ advertisements }: { advertisements: Ad[] }) {
   return (
     <section className="mt-6 rounded-2xl border border-[#e0e1d9] bg-[#f7faf6] p-4">
@@ -37,6 +48,7 @@ export default function SellPage() {
   const [image, setImage] = useState<File | null>(null);
   const [adForm, setAdForm] = useState({ title: "", description: "", media_type: "text", target_url: "", whatsapp: "", package_id: "" });
   const [adImage, setAdImage] = useState<File | null>(null);
+  const [adPreviewUrl, setAdPreviewUrl] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -55,6 +67,13 @@ export default function SellPage() {
       if (data && typeof data.count === "number") setStats((current) => ({ ...current, visitor_count: data.count }));
     }).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (!adImage) { setAdPreviewUrl(""); return; }
+    const url = URL.createObjectURL(adImage);
+    setAdPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [adImage]);
 
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const updateAuth = (key: keyof typeof auth, value: string | boolean) => setAuth((current) => ({ ...current, [key]: value }));
@@ -82,7 +101,17 @@ export default function SellPage() {
 
   const submitAd = async (event: FormEvent) => {
     event.preventDefault(); setSaving(true); setMessage(""); setError("");
-    const body = new FormData(); Object.entries(adForm).forEach(([key, value]) => body.append(key, value)); if (adImage) body.append("media", adImage);
+    const body = new FormData(); Object.entries(adForm).forEach(([key, value]) => body.append(key, value));
+    if (adImage) {
+      const dimensions = await getMediaDimensions(adImage);
+      if (!dimensions) { setError("تعذر قراءة أبعاد الملف"); setSaving(false); return; }
+      const minimumWidth = adForm.media_type === "video" ? 720 : 1280;
+      const minimumHeight = adForm.media_type === "video" ? 405 : 720;
+      if (dimensions.width < minimumWidth || dimensions.height < minimumHeight || Math.abs(dimensions.width / dimensions.height - 16 / 9) > 0.03) {
+        setError(adForm.media_type === "video" ? "اختر فيديو بنسبة 16:9 وبمقاس لا يقل عن 720×405" : "اختر صورة بنسبة 16:9 وبمقاس لا يقل عن 1280×720"); setSaving(false); return;
+      }
+      body.append("media_width", String(dimensions.width)); body.append("media_height", String(dimensions.height)); body.append("media", adImage);
+    }
     const response = await fetch("/api/advertisements", { method: "POST", body }); const result = await response.json().catch(() => ({}));
     if (!response.ok) setError(result.error || "تعذر إرسال الإعلان"); else { setMessage("تم إرسال الإعلان للمراجعة. سيظهر بعد موافقة الإدارة."); setAdForm((current) => ({ ...current, title: "", description: "", target_url: "", whatsapp: "" })); setAdImage(null); }
     setSaving(false);
@@ -93,6 +122,7 @@ export default function SellPage() {
 
   return (
     <main className="min-h-screen bg-[#f7f6f2] px-4 py-6 text-[#202a27] sm:px-6 sm:py-10" dir="rtl">
+      {adPreviewUrl && <div className="fixed bottom-4 left-4 z-40 w-64 rounded-xl border border-[#d8dfd6] bg-white p-2 shadow-xl"><p className="mb-1 text-xs font-bold text-[#173f3a]">معاينة الإعلان</p>{adForm.media_type === "video" ? <video src={adPreviewUrl} controls className="aspect-video w-full rounded-lg object-contain" /> : <img src={adPreviewUrl} alt="معاينة الإعلان" className="aspect-video w-full rounded-lg object-contain" />}</div>}
       <div className="mx-auto max-w-5xl">
         <header className="mb-5 flex items-center justify-between gap-3">
           <Link href="/" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm font-bold text-[#173f3a]"><ArrowRight size={16} /> الرئيسية</Link>
