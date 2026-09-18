@@ -2039,7 +2039,7 @@ export default function Home() {
           ) : adminTab === "sellers" && userRole === "admin" ? (
             <SellersManager />
           ) : adminTab === "advertisements" && userRole === "admin" ? (
-            <AdvertisementsManager />
+            <div className="grid gap-5"><AdvertisementsManager /><AdvertisementOperations /></div>
           ) : adminTab === "targets" && userRole === "admin" ? (
             <TargetsManager orders={orders} settings={settings} />
           ) : adminTab === "targets" && userRole === "staff" ? (
@@ -3278,8 +3278,8 @@ function FeaturedAdvertisement({ advertisement, onClose }: { advertisement: Publ
 }
 
 function AdvertisementsManager() {
-  const [advertisements, setAdvertisements] = useState<(PublicAdvertisement & { status: string; admin_note?: string | null; payment_status: string; featured: boolean })[]>([]);
-  const [packages, setPackages] = useState<{ id: number; name: string; duration_days: number; price: number }[]>([]);
+  const [advertisements, setAdvertisements] = useState<(PublicAdvertisement & { status: string; admin_note?: string | null; payment_status: string; featured: boolean; price: number; starts_at?: string | null; ends_at?: string | null })[]>([]);
+  const [packages, setPackages] = useState<{ id: number; name: string; duration_days: number; price: number; active: boolean }[]>([]);
   const [note, setNote] = useState<Record<number, string>>({});
   const [message, setMessage] = useState("");
   const [packageDraft, setPackageDraft] = useState({ name: "", duration_days: "7", price: "0" });
@@ -3292,10 +3292,25 @@ function AdvertisementsManager() {
   };
   useEffect(() => { void load(); }, []);
 
-  const update = async (id: number, status: string, featured = false) => {
-    const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status, featured, admin_note: note[id] || "" }) });
+  const update = async (id: number, status: string, featured = false, payment_status?: string) => {
+    const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status, featured, payment_status, admin_note: note[id] || "" }) });
     if (!response.ok) return setMessage("تعذر تحديث الإعلان");
-    setAdvertisements((current) => current.map((item) => item.id === id ? { ...item, status, featured, admin_note: note[id] || item.admin_note } : item));
+    setAdvertisements((current) => current.map((item) => item.id === id ? { ...item, status, featured, ...(payment_status ? { payment_status } : {}), admin_note: note[id] || item.admin_note } : item));
+  };
+
+  const updatePackage = async (item: typeof packages[number], changes: Partial<typeof item>) => {
+    const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entity: "package", id: item.id, ...changes }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تعديل الباقة");
+    setPackages((current) => current.map((packageItem) => packageItem.id === item.id ? { ...packageItem, ...result } : packageItem));
+  };
+
+  const deleteEntity = async (entity: "advertisement" | "package", id: number) => {
+    if (!window.confirm(entity === "package" ? "حذف هذه الباقة؟" : "حذف هذا الإعلان؟")) return;
+    const response = await fetch("/api/admin/advertisements", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entity, id }) });
+    if (!response.ok) return setMessage("تعذر الحذف");
+    if (entity === "package") setPackages((current) => current.filter((item) => item.id !== id));
+    else setAdvertisements((current) => current.filter((item) => item.id !== id));
   };
 
   const addPackage = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -3312,6 +3327,43 @@ function AdvertisementsManager() {
       <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5"><div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">مراجعة ونشر</p><h2 className="font-display text-2xl font-bold text-[#173f3a]">الإعلانات العامة</h2></div><div className="grid gap-3">{advertisements.map((advertisement) => <article key={advertisement.id} className="grid gap-3 rounded-xl border border-[#e7e7df] bg-white p-4 lg:grid-cols-[1fr_180px_180px]"><div><p className="font-bold text-[#173f3a]">{advertisement.title}</p><p className="mt-1 text-xs text-[#72807a]">{advertisement.advertiser_name} | {advertisement.payment_status}</p><p className="mt-2 text-sm leading-6 text-[#596963]">{advertisement.description}</p><textarea value={note[advertisement.id] ?? advertisement.admin_note ?? ""} onChange={(event) => setNote((current) => ({ ...current, [advertisement.id]: event.target.value }))} placeholder="ملاحظة للمعلن" className="mt-2 min-h-16 w-full rounded-lg border border-[#dedfd8] p-2 text-xs outline-none" /></div><div className="grid content-start gap-2"><span className="rounded-lg bg-[#eef0ea] px-3 py-2 text-center text-xs font-bold text-[#596963]">{advertisement.status}</span><button onClick={() => void update(advertisement.id, "مقبول", advertisement.featured)} className="h-9 rounded-lg bg-[#39704f] text-xs font-bold text-white">موافقة</button><button onClick={() => void update(advertisement.id, "مرفوض")} className="h-9 rounded-lg bg-[#a9584d] text-xs font-bold text-white">رفض</button></div><div className="grid content-start gap-2"><label className="flex items-center gap-2 text-xs font-bold text-[#596963]"><input type="checkbox" checked={advertisement.featured} onChange={(event) => void update(advertisement.id, advertisement.status, event.target.checked)} /> إعلان مميز عند الدخول</label>{advertisement.image_url && <a href={advertisement.image_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#173f3a] underline">عرض الصورة</a>}</div></article>)}{!advertisements.length && <p className="py-10 text-center text-sm text-[#89918c]">لا توجد إعلانات مرسلة.</p>}</div></div>
       <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5"><h2 className="font-display text-xl font-bold text-[#173f3a]">الباقات الحالية</h2><div className="mt-3 grid gap-2 sm:grid-cols-3">{packages.map((item) => <div key={item.id} className="rounded-xl bg-[#f7faf6] p-3 text-sm font-bold">{item.name}<span className="mt-1 block text-xs text-[#72807a]">{item.duration_days} يوم | {item.price} جنيه</span></div>)}</div><form onSubmit={addPackage} className="mt-4 grid gap-2 sm:grid-cols-[1fr_120px_120px_auto]"><input required value={packageDraft.name} onChange={(event) => setPackageDraft({ ...packageDraft, name: event.target.value })} placeholder="اسم الباقة" className="h-10 rounded-lg border border-[#dedfd8] px-3 text-sm outline-none" /><input required type="number" min="1" value={packageDraft.duration_days} onChange={(event) => setPackageDraft({ ...packageDraft, duration_days: event.target.value })} placeholder="الأيام" className="h-10 rounded-lg border border-[#dedfd8] px-3 text-sm outline-none" /><input required type="number" min="0" step="0.01" value={packageDraft.price} onChange={(event) => setPackageDraft({ ...packageDraft, price: event.target.value })} placeholder="السعر" className="h-10 rounded-lg border border-[#dedfd8] px-3 text-sm outline-none" /><button className="h-10 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white">إضافة باقة</button></form></div>
       {message && <p className="text-center text-sm font-semibold text-[#a9584d]">{message}</p>}
+    </section>
+  );
+}
+
+function AdvertisementOperations() {
+  const [items, setItems] = useState<Array<{ id: number; title: string; status: string; payment_status: string; featured: boolean }>>([]);
+  const [packages, setPackages] = useState<Array<{ id: number; name: string; duration_days: number; price: number; active: boolean }>>([]);
+  const [message, setMessage] = useState("");
+
+  const load = async () => {
+    const response = await fetch("/api/admin/advertisements");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحميل أدوات التحكم");
+    setItems(result.advertisements || []); setPackages(result.packages || []);
+  };
+  useEffect(() => { void load(); }, []);
+
+  const patch = async (body: Record<string, unknown>) => {
+    const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تنفيذ العملية");
+    await load();
+  };
+
+  const remove = async (entity: "advertisement" | "package", id: number) => {
+    if (!window.confirm(entity === "package" ? "حذف الباقة؟" : "حذف الإعلان؟")) return;
+    const response = await fetch("/api/admin/advertisements", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entity, id }) });
+    if (!response.ok) return setMessage("تعذر الحذف");
+    await load();
+  };
+
+  return (
+    <section className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
+      <div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">تحكم سريع</p><h2 className="font-display text-xl font-bold text-[#173f3a]">الدفع والتشغيل والباقات</h2></div>
+      <div className="grid gap-2">{items.map((item) => <div key={item.id} className="grid gap-2 rounded-xl border border-[#e7e7df] bg-white p-3 sm:grid-cols-[1fr_150px_150px_auto]"><span className="text-sm font-bold text-[#173f3a]">{item.title}</span><select value={item.payment_status} onChange={(event) => void patch({ id: item.id, status: item.status, payment_status: event.target.value, featured: item.featured })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option>غير مطلوب</option><option>قيد الانتظار</option><option>تم الدفع</option><option>مرفوض</option></select><select value={item.status} onChange={(event) => void patch({ id: item.id, status: event.target.value, payment_status: item.payment_status, featured: item.featured })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option>قيد المراجعة</option><option>مقبول</option><option>متوقف</option><option>مرفوض</option><option>منتهي</option></select><button type="button" onClick={() => void remove("advertisement", item.id)} className="h-9 rounded-lg border border-[#a9584d] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div>)}</div>
+      <div className="mt-5 grid gap-2">{packages.map((item) => <div key={item.id} className="grid gap-2 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3 sm:grid-cols-[1fr_100px_100px_110px_auto_auto]"><input defaultValue={item.name} onBlur={(event) => void patch({ entity: "package", id: item.id, name: event.target.value })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><input defaultValue={item.duration_days} type="number" min="1" onBlur={(event) => void patch({ entity: "package", id: item.id, duration_days: Number(event.target.value) })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><input defaultValue={item.price} type="number" min="0" step="0.01" onBlur={(event) => void patch({ entity: "package", id: item.id, price: Number(event.target.value) })} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><span className="grid place-items-center text-xs font-bold">{item.active ? "فعالة" : "متوقفة"}</span><button type="button" onClick={() => void patch({ entity: "package", id: item.id, active: !item.active })} className="h-9 rounded-lg bg-[#173f3a] px-3 text-xs font-bold text-white">{item.active ? "إيقاف" : "تشغيل"}</button><button type="button" onClick={() => void remove("package", item.id)} className="h-9 rounded-lg border border-[#a9584d] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div>)}</div>
+      {message && <p className="mt-3 text-center text-sm font-bold text-[#a9584d]">{message}</p>}
     </section>
   );
 }

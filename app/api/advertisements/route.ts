@@ -13,7 +13,7 @@ export async function GET() {
   if (!client) return NextResponse.json({ advertisements: [], packages: [] });
   const now = new Date().toISOString();
   const [{ data: advertisements, error }, { data: packages }] = await Promise.all([
-    client.from("advertisements").select("id,advertiser_name,title,description,media_type,image_url,video_url,target_url,whatsapp,featured,display_order,starts_at,ends_at").eq("status", "مقبول").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).order("featured", { ascending: false }).order("display_order").order("created_at", { ascending: false }),
+    client.from("advertisements").select("id,advertiser_name,title,description,media_type,image_url,video_url,target_url,whatsapp,featured,display_order,starts_at,ends_at").eq("status", "مقبول").in("payment_status", ["غير مطلوب", "تم الدفع"]).or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).order("featured", { ascending: false }).order("display_order").order("created_at", { ascending: false }),
     client.from("advertisement_packages").select("id,name,duration_days,price").eq("active", true).order("price"),
   ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

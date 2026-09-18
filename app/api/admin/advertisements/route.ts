@@ -23,12 +23,42 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   if (await getAdminRole(request) !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await request.json().catch(() => ({}));
+  const client = database();
+  if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  if (body.entity === "package") {
+    const packageId = Number(body.id);
+    if (!Number.isInteger(packageId)) return NextResponse.json({ error: "الباقة غير صحيحة" }, { status: 400 });
+    const update = {
+      ...(typeof body.name === "string" ? { name: body.name.trim().slice(0, 80) } : {}),
+      ...(Number.isInteger(Number(body.duration_days)) && Number(body.duration_days) > 0 ? { duration_days: Number(body.duration_days) } : {}),
+      ...(Number.isFinite(Number(body.price)) && Number(body.price) >= 0 ? { price: Number(body.price) } : {}),
+      ...(typeof body.active === "boolean" ? { active: body.active } : {}),
+    };
+    if (!Object.keys(update).length) return NextResponse.json({ error: "لا توجد تعديلات" }, { status: 400 });
+    const { data, error } = await client.from("advertisement_packages").update(update).eq("id", packageId).select().single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json(data);
+  }
   const id = Number(body.id);
   const status = ["قيد المراجعة", "مقبول", "مرفوض", "متوقف", "منتهي"].includes(body.status) ? body.status : null;
   if (!Number.isInteger(id) || !status) return NextResponse.json({ error: "بيانات الإعلان غير صحيحة" }, { status: 400 });
-  const client = database();
-  if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
-  const update = { status, ...(typeof body.admin_note === "string" ? { admin_note: body.admin_note.trim().slice(0, 500) } : {}), ...(typeof body.featured === "boolean" ? { featured: body.featured } : {}) };
+  const { data: advertisement, error: readError } = await client.from("advertisements").select("price,payment_status,duration_days,starts_at,ends_at").eq("id", id).maybeSingle();
+  if (readError || !advertisement) return NextResponse.json({ error: readError?.message || "الإعلان غير موجود" }, { status: 404 });
+  if (status === "مقبول" && Number(advertisement.price) > 0 && advertisement.payment_status !== "تم الدفع") {
+    return NextResponse.json({ error: "لا يمكن نشر إعلان مدفوع قبل تأكيد الدفع" }, { status: 400 });
+  }
+  const startsAt = body.starts_at ? new Date(body.starts_at) : new Date();
+  const endsAt = body.ends_at ? new Date(body.ends_at) : new Date(startsAt.getTime() + Number(advertisement.duration_days || 7) * 24 * 60 * 60 * 1000);
+  const update = {
+    status,
+    ...( ["غير مطلوب", "قيد الانتظار", "تم الدفع", "مرفوض"].includes(body.payment_status) ? { payment_status: body.payment_status } : {}),
+    ...(typeof body.admin_note === "string" ? { admin_note: body.admin_note.trim().slice(0, 500) } : {}),
+    ...(typeof body.featured === "boolean" ? { featured: body.featured } : {}),
+    ...(status === "مقبول" ? { starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString() } : {}),
+  };
+  if (body.featured === true) {
+    await client.from("advertisements").update({ featured: false }).neq("id", id);
+  }
   const { error } = await client.from("advertisements").update(update).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ success: true });
@@ -43,7 +73,20 @@ export async function POST(request: NextRequest) {
   if (!name || !Number.isInteger(durationDays) || durationDays < 1 || !Number.isFinite(price) || price < 0) return NextResponse.json({ error: "بيانات الباقة غير صحيحة" }, { status: 400 });
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
-  const { data, error } = await client.from("advertisement_packages").insert({ name, duration_days: durationDays, price }).select().single();
+  const { data, error } = await client.from("advertisement_packages").insert({ name, duration_days: durationDays, price, active: true }).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data, { status: 201 });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (await getAdminRole(request) !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const body = await request.json().catch(() => ({}));
+  const client = database();
+  if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  const table = body.entity === "package" ? "advertisement_packages" : "advertisements";
+  const id = Number(body.id);
+  if (!Number.isInteger(id)) return NextResponse.json({ error: "العنصر غير صحيح" }, { status: 400 });
+  const { error } = await client.from(table).delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  return NextResponse.json({ success: true });
 }
