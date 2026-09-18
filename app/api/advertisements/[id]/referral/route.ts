@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const visitorKey = typeof body.visitor_key === "string" ? body.visitor_key.trim().slice(0, 100) : "";
   if (!Number.isInteger(advertisementId) || referralCode.length < 8 || visitorKey.length < 16) return NextResponse.json({ error: "بيانات الإحالة غير صحيحة" }, { status: 400 });
   const now = new Date().toISOString();
-  const { data: campaign } = await client.from("ad_reward_campaigns").select("id").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).maybeSingle();
+  const { data: campaign } = await client.from("ad_reward_campaigns").select("id,per_user_limit").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).maybeSingle();
   if (!campaign) return NextResponse.json({ counted: false, reason: "no_active_campaign" });
   const { data: referrer } = await client.from("market_users").select("id").eq("referral_code", referralCode).eq("active", true).maybeSingle();
   if (!referrer) return NextResponse.json({ counted: false, reason: "unknown_referrer" });
@@ -36,9 +36,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const spent = (existingRewards || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const maxReached = action.max_rewards !== null && Number(recipientCount || 0) >= Number(action.max_rewards);
   const campaignMaxReached = campaignData?.max_recipients !== null && Number(recipientCount || 0) >= Number(campaignData?.max_recipients || 0);
+  const { count: userRewardCount } = await client.from("ad_reward_ledger").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("user_id", referrer.id).in("status", ["pending", "approved"]);
+  const userLimitReached = Number(userRewardCount || 0) >= Number(campaignData?.per_user_limit || campaign.per_user_limit || 1);
   const amount = Number(action.reward_amount || 0);
   const budgetReached = Number(campaignData?.budget || 0) > 0 && spent + amount > Number(campaignData?.budget || 0);
-  if (maxReached || campaignMaxReached || budgetReached) return NextResponse.json({ counted: true, reward: false, reason: "limit_reached" });
+  if (maxReached || campaignMaxReached || userLimitReached || budgetReached) return NextResponse.json({ counted: true, reward: false, reason: "limit_reached" });
   const referredUser = await getMarketUser(request);
   if (referredUser?.id === referrer.id) return NextResponse.json({ counted: true, reward: false, reason: "self_referral" });
   const { error: rewardError } = await client.from("ad_reward_ledger").insert({ user_id: referrer.id, campaign_id: campaign.id, action_id: action.id, referral_id: referral.id, status: "pending", points: Number(action.reward_points || 0), amount, reason: "إحالة زائر جديد من رابط المشاركة", action_key: `referral:${campaign.id}:${referrer.id}:${visitorKey}` });

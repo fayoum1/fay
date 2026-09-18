@@ -32,12 +32,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const user = await getMarketUser(request);
     if (user) {
       const now = new Date().toISOString();
-      const { data: campaign } = await client.from("ad_reward_campaigns").select("id,budget,max_recipients").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).maybeSingle();
+      const { data: campaign } = await client.from("ad_reward_campaigns").select("id,budget,max_recipients,per_user_limit").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).maybeSingle();
       if (campaign) {
         const { data: action } = await client.from("ad_reward_actions").select("id,reward_points,reward_amount,max_rewards").eq("campaign_id", campaign.id).eq("action_type", "like").eq("enabled", true).maybeSingle();
         if (action) {
           const { count } = await client.from("ad_reward_ledger").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("user_id", user.id).in("status", ["pending", "approved"]);
-          if (!action.max_rewards || Number(count || 0) < Number(action.max_rewards)) {
+          const { count: userRewardCount } = await client.from("ad_reward_ledger").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("user_id", user.id).in("status", ["pending", "approved"]);
+          if (Number(userRewardCount || 0) < Number(campaign.per_user_limit || 1) && (!action.max_rewards || Number(count || 0) < Number(action.max_rewards))) {
             const { data: existingRewards } = await client.from("ad_reward_ledger").select("amount").eq("campaign_id", campaign.id).in("status", ["pending", "approved"]);
             const spent = (existingRewards || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
             const amount = Number(action.reward_amount || 0);

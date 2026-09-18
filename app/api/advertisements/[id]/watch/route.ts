@@ -20,7 +20,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const now = new Date().toISOString();
   const { data: advertisement } = await client.from("advertisements").select("id,media_type").eq("id", advertisementId).eq("status", "مقبول").maybeSingle();
   if (!advertisement || advertisement.media_type !== "video") return NextResponse.json({ counted: false, reason: "video_only" });
-  const { data: campaign } = await client.from("ad_reward_campaigns").select("id,budget,max_recipients").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).maybeSingle();
+  const { data: campaign } = await client.from("ad_reward_campaigns").select("id,budget,max_recipients,per_user_limit").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).maybeSingle();
   if (!campaign) return NextResponse.json({ counted: false, reason: "no_active_campaign" });
   const { data: action } = await client.from("ad_reward_actions").select("id,reward_points,reward_amount,required_seconds,max_rewards").eq("campaign_id", campaign.id).eq("action_type", "view").eq("enabled", true).maybeSingle();
   if (!action) return NextResponse.json({ counted: false, reason: "no_view_reward" });
@@ -30,6 +30,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { data: existing } = await client.from("ad_reward_ledger").select("id,status").eq("action_key", actionKey).maybeSingle();
   if (existing) return NextResponse.json({ counted: false, repeated: true, status: existing.status });
   const { count } = await client.from("ad_reward_ledger").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).in("status", ["pending", "approved"]);
+  const { count: userRewardCount } = await client.from("ad_reward_ledger").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("user_id", user.id).in("status", ["pending", "approved"]);
+  if (Number(userRewardCount || 0) >= Number(campaign.per_user_limit || 1)) return NextResponse.json({ counted: false, reason: "user_limit" });
   if (action.max_rewards !== null && Number(count || 0) >= Number(action.max_rewards)) return NextResponse.json({ counted: false, reason: "action_limit" });
   if (campaign.max_recipients !== null && Number(count || 0) >= Number(campaign.max_recipients)) return NextResponse.json({ counted: false, reason: "campaign_limit" });
   const { data: rewards } = await client.from("ad_reward_ledger").select("amount").eq("campaign_id", campaign.id).in("status", ["pending", "approved"]);
