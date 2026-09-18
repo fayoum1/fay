@@ -301,6 +301,7 @@ export default function Home() {
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSInstall, setShowIOSInstall] = useState(false);
   const [showDesktopInstallHelp, setShowDesktopInstallHelp] = useState(false);
+  const [appUpdate, setAppUpdate] = useState<ServiceWorkerRegistration | null>(null);
   const [showOutsideDeliveryWarning, setShowOutsideDeliveryWarning] = useState(false);
   const [pendingDeleteOrder, setPendingDeleteOrder] = useState<string | null>(null);
   const [milestoneMessage, setMilestoneMessage] = useState("");
@@ -456,15 +457,46 @@ export default function Home() {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     window.setTimeout(() => setIsIOS(ios), 0);
     if ("serviceWorker" in navigator) {
+      let refreshing = false;
+      const handleControllerChange = () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      };
+      navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
       navigator.serviceWorker
         .register("/sw.js", { updateViaCache: "none" })
-        .then((registration) => registration.update())
+        .then((registration) => {
+          const showUpdate = () => {
+            if (registration.waiting) setAppUpdate(registration);
+          };
+          showUpdate();
+          registration.addEventListener("updatefound", () => {
+            const installing = registration.installing;
+            if (!installing) return;
+            installing.addEventListener("statechange", () => {
+              if (installing.state === "installed" && navigator.serviceWorker.controller) showUpdate();
+            });
+          });
+          return registration.update();
+        })
         .catch(() => undefined);
+      window.addEventListener("beforeunload", () => navigator.serviceWorker.removeEventListener("controllerchange", handleControllerChange), { once: true });
     }
     const handleInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
     window.addEventListener("beforeinstallprompt", handleInstallPrompt);
     return () => { window.clearTimeout(initialClock); window.clearInterval(clock); window.removeEventListener("beforeinstallprompt", handleInstallPrompt); };
   }, []);
+
+  const applyAppUpdate = () => {
+    const waiting = appUpdate?.waiting;
+    setAppUpdate(null);
+    if (!waiting) {
+      window.location.reload();
+      return;
+    }
+    waiting.postMessage({ type: "SKIP_WAITING" });
+  };
 
   useEffect(() => {
     if (visitorTrackedRef.current) return;
@@ -1389,6 +1421,12 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {appUpdate && (
+        <div className="fixed inset-x-4 bottom-4 z-50 flex items-center justify-between gap-3 rounded-xl bg-[#173f3a] px-4 py-3 text-right text-sm font-bold text-white shadow-2xl sm:left-auto sm:right-4 sm:max-w-sm">
+          <span>توجد نسخة جديدة من التطبيق</span>
+          <button onClick={applyAppUpdate} className="shrink-0 rounded-lg bg-[#c48738] px-3 py-2 text-xs font-bold text-white">تحديث الآن</button>
         </div>
       )}
       {radioError && <button onClick={toggleRadio} className="fixed bottom-4 left-4 z-40 rounded-xl bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20] shadow-lg">تعذر تشغيل الإذاعة، اضغط للمحاولة</button>}

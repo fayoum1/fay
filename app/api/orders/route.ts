@@ -23,11 +23,42 @@ export async function POST(request: NextRequest) {
   if (!Array.isArray(body?.items) || !body.items.length) {
     return NextResponse.json({ error: "أضف صنفًا واحدًا على الأقل للسلة" }, { status: 400 });
   }
-  const totalQuantity = body.items.reduce(
-    (sum: number, item: { quantity?: unknown }) =>
-      sum + (typeof item?.quantity === "number" && Number.isFinite(item.quantity) ? Math.max(0, Math.floor(item.quantity)) : 0),
-    0,
-  );
+  const requestedQuantities = new Map<number, number>();
+  for (const item of body.items) {
+    const id = Number(item?.id);
+    const quantity = Number(item?.quantity);
+    if (!Number.isInteger(id) || !Number.isInteger(quantity) || quantity < 1 || quantity > 100000) {
+      return NextResponse.json({ error: "بيانات الأصناف أو الكميات غير صحيحة" }, { status: 400 });
+    }
+    requestedQuantities.set(id, (requestedQuantities.get(id) || 0) + quantity);
+  }
+  const database = createClient(url, key, { auth: { persistSession: false } });
+  const { data: menuItems, error: menuError } = await database
+    .from("items")
+    .select("id,name,category,age_or_weight,price,price_mode,discount_percent,active")
+    .in("id", [...requestedQuantities.keys()])
+    .eq("active", true);
+  if (menuError) return NextResponse.json({ error: menuError.message }, { status: 500 });
+  if ((menuItems || []).length !== requestedQuantities.size) {
+    return NextResponse.json({ error: "بعض الأصناف غير متاحة حاليًا" }, { status: 400 });
+  }
+  const orderItems = (menuItems || []).map((item) => {
+    const price = Number(item.price) || 0;
+    const finalPrice = item.price_mode === "discount"
+      ? price * (1 - (Number(item.discount_percent) || 0) / 100)
+      : ["market", "exchange", "free"].includes(item.price_mode) ? 0 : price;
+    return {
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      age_or_weight: item.age_or_weight || null,
+      quantity: requestedQuantities.get(Number(item.id)),
+      price,
+      final_price: finalPrice,
+    };
+  });
+  const totalQuantity = orderItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  const total = orderItems.reduce((sum, item) => sum + item.final_price * (item.quantity || 0), 0);
   if (body.governorate !== "الفيوم" && totalQuantity < 100) {
     return NextResponse.json(
       { error: "لا يوجد توصيل أو حجز للكميات الصغيرة خارج محافظة الفيوم. يرجى زيادة الكمية أو التواصل مع فريق الدعم 0842064130" },
@@ -35,7 +66,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const database = createClient(url, key, { auth: { persistSession: false } });
   const identity = await getSessionIdentity(request);
   const bookingStaffName = identity?.role === "staff" ? identity.staffName || null : null;
   const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -52,8 +82,8 @@ export async function POST(request: NextRequest) {
     p_phone: phone,
     p_governorate: body.governorate,
     p_district: body.district || null,
-    p_items: body.items,
-    p_total: Number(body.total) || 0,
+    p_items: orderItems,
+    p_total: total,
     p_booking_staff_name: bookingStaffName,
   });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
