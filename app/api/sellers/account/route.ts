@@ -9,7 +9,14 @@ export async function GET(request: NextRequest) {
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const { data, error } = await client.from("seller_offers").select("id,item_name,quantity,price,image_url,status,admin_note,visibility,created_at").eq("user_id", user.id).order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ user: { display_name: user.display_name, phone: user.phone, role: user.role, receive_offers: user.receive_offers, referral_code: user.referral_code }, offers: data || [] });
+  const { data: rewards } = await client.from("ad_reward_ledger").select("id,campaign_id,status,points,amount,reason,created_at").eq("user_id", user.id).order("created_at", { ascending: false });
+  const rewardRows = rewards || [];
+  const rewardSummary = rewardRows.reduce((summary, reward) => {
+    if (reward.status === "approved") { summary.points += Number(reward.points || 0); summary.amount += Number(reward.amount || 0); }
+    if (reward.status === "pending") summary.pending += 1;
+    return summary;
+  }, { points: 0, amount: 0, pending: 0 });
+  return NextResponse.json({ user: { display_name: user.display_name, phone: user.phone, role: user.role, receive_offers: user.receive_offers, referral_code: user.referral_code }, offers: data || [], rewards: rewardRows, reward_summary: rewardSummary });
 }
 
 export async function POST(request: NextRequest) {
