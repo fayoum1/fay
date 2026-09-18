@@ -83,9 +83,24 @@ type SellerOffer = {
   age_or_weight?: string | null;
   price: number;
   image_url?: string | null;
-  status: "جديد" | "تم التواصل" | "تم الشراء" | "مرفوض";
+  status: "جديد" | "قيد المراجعة" | "تم التواصل" | "مهتم وجار التواصل" | "تم الشراء" | "مرفوض";
+  admin_note?: string | null;
+  visibility?: string;
   created_at: string;
 };
+type PublicAdvertisement = {
+  id: number;
+  advertiser_name: string;
+  title: string;
+  description?: string | null;
+  media_type: string;
+  image_url?: string | null;
+  video_url?: string | null;
+  target_url?: string | null;
+  whatsapp?: string | null;
+  featured?: boolean;
+};
+type MarketTrader = { id: number; display_name: string; phone: string; receive_offers: boolean };
 const orderStatuses: OrderStatus[] = [
   "حجز مؤكد",
   "قادم",
@@ -274,7 +289,7 @@ export default function Home() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [menuItems, setMenuItems] = useState<Item[]>([]);
-  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers">(
+  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers" | "advertisements">(
     "orders",
   );
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -307,6 +322,8 @@ export default function Home() {
   const [milestoneMessage, setMilestoneMessage] = useState("");
   const [pendingStatusConfirm, setPendingStatusConfirm] = useState<{ id: string; status: OrderStatus; itemId?: number } | null>(null);
   const [penaltyMessage, setPenaltyMessage] = useState("");
+  const [advertisements, setAdvertisements] = useState<PublicAdvertisement[]>([]);
+  const [featuredAdvertisement, setFeaturedAdvertisement] = useState<PublicAdvertisement | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("rashefa_staff_name");
@@ -314,6 +331,22 @@ export default function Home() {
       setStaffName(saved);
       setStaffNameInput(saved);
     }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/advertisements")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        const accepted = Array.isArray(data?.advertisements) ? data.advertisements : [];
+        setAdvertisements(accepted);
+        const featured = accepted.find((item: PublicAdvertisement) => item.featured);
+        if (featured && !window.sessionStorage.getItem(`featured-ad-${featured.id}`)) {
+          setFeaturedAdvertisement(featured);
+          window.sessionStorage.setItem(`featured-ad-${featured.id}`, "shown");
+          window.setTimeout(() => setFeaturedAdvertisement(null), 10000);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   const filteredItems = menuItems.filter(
@@ -1423,6 +1456,7 @@ export default function Home() {
           </div>
         </div>
       )}
+      {featuredAdvertisement && <FeaturedAdvertisement advertisement={featuredAdvertisement} onClose={() => setFeaturedAdvertisement(null)} />}
       {appUpdate && (
         <div className="fixed inset-x-4 bottom-4 z-50 flex items-center justify-between gap-3 rounded-xl bg-[#173f3a] px-4 py-3 text-right text-sm font-bold text-white shadow-2xl sm:left-auto sm:right-4 sm:max-w-sm">
           <span>توجد نسخة جديدة من التطبيق</span>
@@ -1568,6 +1602,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            {advertisements.length > 0 && <AdvertisementStrip advertisements={advertisements} />}
             <div className="grid min-w-0 gap-3 pr-1">
               {filteredItems.map((item) => (
                 <article
@@ -1960,6 +1995,12 @@ export default function Home() {
                   >
                     البائعون
                   </button>
+                  <button
+                    onClick={() => setAdminTab("advertisements")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "advertisements" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    الإعلانات
+                  </button>
                 </>
               )}
               </div>
@@ -1997,6 +2038,8 @@ export default function Home() {
             <MarketingManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "sellers" && userRole === "admin" ? (
             <SellersManager />
+          ) : adminTab === "advertisements" && userRole === "admin" ? (
+            <AdvertisementsManager />
           ) : adminTab === "targets" && userRole === "admin" ? (
             <TargetsManager orders={orders} settings={settings} />
           ) : adminTab === "targets" && userRole === "staff" ? (
@@ -3201,8 +3244,82 @@ function MarketingManager({
   );
 }
 
+function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertisement[] }) {
+  return (
+    <div className="mb-4 overflow-hidden rounded-2xl border border-[#e0e1d9] bg-[#fffdf9]" aria-label="الإعلانات المقبولة">
+      <div className="advertisement-strip flex w-max min-w-full items-center gap-3 p-2">
+        {[...advertisements, ...advertisements].map((advertisement, index) => {
+          const content = (
+            <div className="flex h-20 w-[min(78vw,420px)] shrink-0 items-center gap-3 rounded-xl border border-[#e7e7df] bg-white px-3 text-right">
+              {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="size-14 shrink-0 rounded-lg object-cover" /> : advertisement.image_url && <img src={advertisement.image_url} alt="" className="size-14 shrink-0 rounded-lg object-cover" />}
+              <div className="min-w-0"><p className="text-[10px] font-bold text-[#c48738]">إعلان ممول</p><p className="truncate text-sm font-bold text-[#173f3a]">{advertisement.title}</p><p className="line-clamp-2 text-xs text-[#72807a]">{advertisement.description}</p></div>
+            </div>
+          );
+          return advertisement.target_url ? <a key={`${advertisement.id}-${index}`} href={advertisement.target_url} target="_blank" rel="noreferrer">{content}</a> : <div key={`${advertisement.id}-${index}`}>{content}</div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FeaturedAdvertisement({ advertisement, onClose }: { advertisement: PublicAdvertisement; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-[#173f3acc] px-4" role="dialog" aria-modal="true" aria-label="إعلان مميز">
+      <div className="relative w-full max-w-lg rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5 text-right shadow-2xl">
+        <button type="button" onClick={onClose} className="absolute left-3 top-3 grid size-9 place-items-center rounded-lg bg-[#eef0ea] text-xl text-[#596963]" aria-label="إغلاق الإعلان">×</button>
+        <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
+        <h2 className="mt-2 font-display text-2xl font-bold text-[#173f3a]">{advertisement.title}</h2>
+        {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} controls playsInline className="mt-4 max-h-64 w-full rounded-xl object-cover" /> : advertisement.image_url && <img src={advertisement.image_url} alt="" className="mt-4 max-h-64 w-full rounded-xl object-cover" />}
+        <p className="mt-3 leading-7 text-[#596963]">{advertisement.description}</p>
+        {advertisement.target_url && <a href={advertisement.target_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex h-11 items-center rounded-xl bg-[#c48738] px-5 text-sm font-bold text-white">معرفة المزيد</a>}
+      </div>
+    </div>
+  );
+}
+
+function AdvertisementsManager() {
+  const [advertisements, setAdvertisements] = useState<(PublicAdvertisement & { status: string; admin_note?: string | null; payment_status: string; featured: boolean })[]>([]);
+  const [packages, setPackages] = useState<{ id: number; name: string; duration_days: number; price: number }[]>([]);
+  const [note, setNote] = useState<Record<number, string>>({});
+  const [message, setMessage] = useState("");
+  const [packageDraft, setPackageDraft] = useState({ name: "", duration_days: "7", price: "0" });
+
+  const load = async () => {
+    const response = await fetch("/api/admin/advertisements");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحميل الإعلانات");
+    setAdvertisements(result.advertisements || []); setPackages(result.packages || []);
+  };
+  useEffect(() => { void load(); }, []);
+
+  const update = async (id: number, status: string, featured = false) => {
+    const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status, featured, admin_note: note[id] || "" }) });
+    if (!response.ok) return setMessage("تعذر تحديث الإعلان");
+    setAdvertisements((current) => current.map((item) => item.id === id ? { ...item, status, featured, admin_note: note[id] || item.admin_note } : item));
+  };
+
+  const addPackage = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const response = await fetch("/api/admin/advertisements", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(packageDraft) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر إضافة الباقة");
+    setPackages((current) => [...current, result]);
+    setPackageDraft({ name: "", duration_days: "7", price: "0" });
+  };
+
+  return (
+    <section className="grid gap-5">
+      <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5"><div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">مراجعة ونشر</p><h2 className="font-display text-2xl font-bold text-[#173f3a]">الإعلانات العامة</h2></div><div className="grid gap-3">{advertisements.map((advertisement) => <article key={advertisement.id} className="grid gap-3 rounded-xl border border-[#e7e7df] bg-white p-4 lg:grid-cols-[1fr_180px_180px]"><div><p className="font-bold text-[#173f3a]">{advertisement.title}</p><p className="mt-1 text-xs text-[#72807a]">{advertisement.advertiser_name} | {advertisement.payment_status}</p><p className="mt-2 text-sm leading-6 text-[#596963]">{advertisement.description}</p><textarea value={note[advertisement.id] ?? advertisement.admin_note ?? ""} onChange={(event) => setNote((current) => ({ ...current, [advertisement.id]: event.target.value }))} placeholder="ملاحظة للمعلن" className="mt-2 min-h-16 w-full rounded-lg border border-[#dedfd8] p-2 text-xs outline-none" /></div><div className="grid content-start gap-2"><span className="rounded-lg bg-[#eef0ea] px-3 py-2 text-center text-xs font-bold text-[#596963]">{advertisement.status}</span><button onClick={() => void update(advertisement.id, "مقبول", advertisement.featured)} className="h-9 rounded-lg bg-[#39704f] text-xs font-bold text-white">موافقة</button><button onClick={() => void update(advertisement.id, "مرفوض")} className="h-9 rounded-lg bg-[#a9584d] text-xs font-bold text-white">رفض</button></div><div className="grid content-start gap-2"><label className="flex items-center gap-2 text-xs font-bold text-[#596963]"><input type="checkbox" checked={advertisement.featured} onChange={(event) => void update(advertisement.id, advertisement.status, event.target.checked)} /> إعلان مميز عند الدخول</label>{advertisement.image_url && <a href={advertisement.image_url} target="_blank" rel="noreferrer" className="text-xs font-bold text-[#173f3a] underline">عرض الصورة</a>}</div></article>)}{!advertisements.length && <p className="py-10 text-center text-sm text-[#89918c]">لا توجد إعلانات مرسلة.</p>}</div></div>
+      <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5"><h2 className="font-display text-xl font-bold text-[#173f3a]">الباقات الحالية</h2><div className="mt-3 grid gap-2 sm:grid-cols-3">{packages.map((item) => <div key={item.id} className="rounded-xl bg-[#f7faf6] p-3 text-sm font-bold">{item.name}<span className="mt-1 block text-xs text-[#72807a]">{item.duration_days} يوم | {item.price} جنيه</span></div>)}</div><form onSubmit={addPackage} className="mt-4 grid gap-2 sm:grid-cols-[1fr_120px_120px_auto]"><input required value={packageDraft.name} onChange={(event) => setPackageDraft({ ...packageDraft, name: event.target.value })} placeholder="اسم الباقة" className="h-10 rounded-lg border border-[#dedfd8] px-3 text-sm outline-none" /><input required type="number" min="1" value={packageDraft.duration_days} onChange={(event) => setPackageDraft({ ...packageDraft, duration_days: event.target.value })} placeholder="الأيام" className="h-10 rounded-lg border border-[#dedfd8] px-3 text-sm outline-none" /><input required type="number" min="0" step="0.01" value={packageDraft.price} onChange={(event) => setPackageDraft({ ...packageDraft, price: event.target.value })} placeholder="السعر" className="h-10 rounded-lg border border-[#dedfd8] px-3 text-sm outline-none" /><button className="h-10 rounded-lg bg-[#173f3a] px-4 text-sm font-bold text-white">إضافة باقة</button></form></div>
+      {message && <p className="text-center text-sm font-semibold text-[#a9584d]">{message}</p>}
+    </section>
+  );
+}
+
 function SellersManager() {
   const [offers, setOffers] = useState<SellerOffer[]>([]);
+  const [traders, setTraders] = useState<MarketTrader[]>([]);
+  const [selectedTraders, setSelectedTraders] = useState<Record<number, number[]>>({});
   const [stats, setStats] = useState({ visitor_count: 0, submission_count: 0 });
   const [statusFilter, setStatusFilter] = useState("الكل");
   const [message, setMessage] = useState("");
@@ -3212,6 +3329,7 @@ function SellersManager() {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) return setMessage(result.error || "تعذر تحميل عروض البائعين");
     setOffers(result.offers || []);
+    setTraders(result.traders || []);
     setStats(result.stats || { visitor_count: 0, submission_count: 0 });
   };
 
@@ -3221,7 +3339,7 @@ function SellersManager() {
     const response = await fetch("/api/admin/sellers", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
+      body: JSON.stringify({ id, status, trader_ids: selectedTraders[id] || [] }),
     });
     if (!response.ok) return setMessage("تعذر تحديث حالة العرض");
     setOffers((current) => current.map((offer) => offer.id === id ? { ...offer, status } : offer));
@@ -3239,7 +3357,7 @@ function SellersManager() {
       <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div><p className="text-sm font-semibold text-[#c48738]">توريد وشراء</p><h2 className="font-display text-2xl font-bold text-[#173f3a]">البائعون</h2></div>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="select-with-arrow h-10 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option>الكل</option><option>جديد</option><option>تم التواصل</option><option>تم الشراء</option><option>مرفوض</option></select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="select-with-arrow h-10 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"><option>الكل</option><option>جديد</option><option>قيد المراجعة</option><option>تم التواصل</option><option>مهتم وجار التواصل</option><option>تم الشراء</option><option>مرفوض</option></select>
         </div>
         <div className="grid gap-3">
           {visibleOffers.map((offer) => (
@@ -3247,7 +3365,7 @@ function SellersManager() {
               <div><h3 className="font-bold text-[#173f3a]">{offer.item_name} <span className="text-sm text-[#c48738]">× {offer.quantity}</span></h3><p className="mt-1 text-sm font-semibold text-[#596963]">{offer.seller_name}</p><p className="text-xs text-[#89918c]">{offer.phone} | {offer.address}</p></div>
               <div className="text-sm text-[#596963]"><p>العمر/الوزن: <strong>{offer.age_or_weight || "-"}</strong></p><p>السعر: <strong className="text-[#c48738]">{offer.price} جنيه</strong></p><p className="text-xs text-[#89918c]">{formatOrderDate(offer.created_at)}</p></div>
               <div>{offer.image_url ? <a href={offer.image_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-[#173f3a] underline">عرض صورة المنتج</a> : <span className="text-xs text-[#89918c]">بدون صورة</span>}</div>
-              <select value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value as SellerOffer["status"])} className="select-with-arrow h-10 rounded-xl border border-[#dedfd8] bg-[#fff0d4] px-2 text-xs font-bold text-[#a66c20] outline-none"><option>جديد</option><option>تم التواصل</option><option>تم الشراء</option><option>مرفوض</option></select>
+              <div><select value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value as SellerOffer["status"])} className="select-with-arrow h-10 w-full rounded-xl border border-[#dedfd8] bg-[#fff0d4] px-2 text-xs font-bold text-[#a66c20] outline-none"><option>جديد</option><option>قيد المراجعة</option><option>تم التواصل</option><option>مهتم وجار التواصل</option><option>تم الشراء</option><option>مرفوض</option></select><textarea defaultValue={offer.admin_note || ""} onBlur={(event) => { if (event.target.value !== (offer.admin_note || "")) void fetch("/api/admin/sellers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: offer.id, status: offer.status, note: event.target.value }) }); }} placeholder="ملاحظة للبائع" className="mt-2 min-h-16 w-full rounded-lg border border-[#dedfd8] p-2 text-xs outline-none" />{offer.visibility !== "admin_only" && traders.length > 0 && <div className="mt-2 rounded-lg bg-[#f7faf6] p-2 text-xs"><p className="mb-1 font-bold text-[#173f3a]">إرسال لتجار</p><label className="mb-1 flex items-center gap-2 font-bold"><input type="checkbox" checked={(selectedTraders[offer.id] || []).length === traders.length} onChange={(event) => setSelectedTraders((current) => ({ ...current, [offer.id]: event.target.checked ? traders.map((trader) => trader.id) : [] }))} /> تحديد الكل</label>{traders.map((trader) => <label key={trader.id} className="flex items-center gap-2"><input type="checkbox" checked={(selectedTraders[offer.id] || []).includes(trader.id)} onChange={(event) => setSelectedTraders((current) => ({ ...current, [offer.id]: event.target.checked ? [...(current[offer.id] || []), trader.id] : (current[offer.id] || []).filter((id) => id !== trader.id) }))} /> {trader.display_name}</label>)}<button type="button" onClick={() => void updateStatus(offer.id, offer.status)} className="mt-2 h-8 w-full rounded-lg bg-[#173f3a] text-[11px] font-bold text-white">حفظ وإرسال العرض</button></div>}</div>
             </article>
           ))}
           {!visibleOffers.length && <p className="rounded-xl border border-dashed border-[#dedfd8] py-10 text-center text-sm text-[#89918c]">لا توجد عروض بهذا الفلتر.</p>}

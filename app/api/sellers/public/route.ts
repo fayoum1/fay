@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getMarketUser } from "@/lib/market-auth";
 
 function database() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -22,9 +23,11 @@ export async function GET() {
   return NextResponse.json({ items: items || [], stats: stats || { visitor_count: 0, submission_count: 0 } });
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  const user = await getMarketUser(request);
+  if (!user) return NextResponse.json({ error: "سجل الدخول أولًا لحفظ العرض ومتابعة حالته" }, { status: 401 });
   const form = await request.formData();
   const sellerName = String(form.get("seller_name") || "").trim().slice(0, 100);
   const phone = digits(String(form.get("phone") || "")).slice(0, 15);
@@ -33,6 +36,9 @@ export async function POST(request: Request) {
   const quantity = Number(form.get("quantity"));
   const ageOrWeight = String(form.get("age_or_weight") || "").trim().slice(0, 80);
   const price = Number(form.get("price"));
+  const visibility = ["admin_only", "selected_traders", "all_traders"].includes(String(form.get("visibility")))
+    ? String(form.get("visibility"))
+    : "admin_only";
   if (!sellerName || !address || !itemName) return NextResponse.json({ error: "أكمل الاسم والعنوان والصنف" }, { status: 400 });
   if (phone.length < 8) return NextResponse.json({ error: "اكتب رقم هاتف صحيح" }, { status: 400 });
   if (!Number.isInteger(quantity) || quantity < 1) return NextResponse.json({ error: "اكتب عددًا صحيحًا أكبر من صفر" }, { status: 400 });
@@ -47,7 +53,7 @@ export async function POST(request: Request) {
     if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 400 });
     imageUrl = client.storage.from("seller-images").getPublicUrl(path).data.publicUrl;
   }
-  const { error } = await client.from("seller_offers").insert({ seller_name: sellerName, phone, address, item_name: itemName, quantity, age_or_weight: ageOrWeight || null, price, image_url: imageUrl });
+  const { error } = await client.from("seller_offers").insert({ user_id: user.id, seller_name: sellerName, phone, address, item_name: itemName, quantity, age_or_weight: ageOrWeight || null, price, image_url: imageUrl, visibility, status: "قيد المراجعة" });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   await client.rpc("increment_seller_submission_count");
   return NextResponse.json({ success: true }, { status: 201 });

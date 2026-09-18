@@ -70,6 +70,20 @@ body {
   animation: visitor-message-left-to-right 12s linear infinite;
 }
 
+.advertisement-strip {
+  animation: advertisement-scroll 28s linear infinite;
+}
+
+.advertisement-strip:hover,
+.advertisement-strip:focus-within {
+  animation-play-state: paused;
+}
+
+@keyframes advertisement-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(50%); }
+}
+
 @keyframes visitor-message-left-to-right {
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
@@ -79,6 +93,10 @@ body {
   .visitor-message-ticker {
     animation: none;
     justify-content: center;
+  }
+
+  .advertisement-strip {
+    animation: none;
   }
 }
 
