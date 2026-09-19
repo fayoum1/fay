@@ -340,7 +340,7 @@ export default function AdvertisementProfile({
             </div>
           </div>
           {advertisement.media_type === "video" && advertisement.video_url ? (
-            <div className="mx-auto h-[80dvh] w-full max-w-[430px] overflow-hidden bg-black shadow-[0_18px_50px_#173f3a26] sm:my-6 sm:aspect-[9/16] sm:h-auto sm:max-h-[76vh] sm:rounded-2xl">
+            <div className="mx-auto h-[75dvh] w-full max-w-[430px] overflow-hidden bg-black shadow-[0_18px_50px_#173f3a26] sm:my-6 sm:aspect-[9/16] sm:h-auto sm:max-h-[75vh] sm:rounded-2xl">
                 <video
                   ref={videoRef}
                   src={advertisement.video_url}

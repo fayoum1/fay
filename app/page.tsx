@@ -347,8 +347,11 @@ export default function Home() {
         if (cancelled) return;
         const accepted = Array.isArray(data?.advertisements) ? data.advertisements : [];
         setAdvertisements(accepted);
-        const featured = accepted.find((item: PublicAdvertisement) => item.featured);
-        if (featured) {
+        const featuredAdvertisements = accepted.filter((item: PublicAdvertisement) => item.featured);
+        const featured = featuredAdvertisements[Math.floor(Math.random() * featuredAdvertisements.length)];
+        const featuredAdvertisementShown = window.sessionStorage.getItem("featured_advertisement_shown");
+        if (featured && !featuredAdvertisementShown) {
+          window.sessionStorage.setItem("featured_advertisement_shown", "true");
           setFeaturedAdvertisement(featured);
           closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), 15000);
         }
@@ -1531,7 +1534,7 @@ export default function Home() {
       {view === "cashier" ? (
         <div className="mx-auto grid w-full min-w-0 max-w-[1440px] gap-5 overflow-x-hidden px-3 py-5 sm:gap-8 sm:px-5 sm:py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section className="min-w-0 max-w-full overflow-x-hidden">
-            <div className="mb-6 flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 {showItemSearch ? (
                   <div className="relative min-w-0 flex-1">
@@ -3263,7 +3266,7 @@ function MarketingManager({
 
 function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertisement[] }) {
   return (
-    <div className="overflow-hidden" aria-label="الإعلانات المقبولة">
+    <div className="mb-2 overflow-hidden" aria-label="الإعلانات المقبولة">
       <div className="advertisement-strip flex w-max min-w-full items-center gap-3">
         {advertisements.map((advertisement) => {
           const content = (
