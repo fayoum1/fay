@@ -261,7 +261,7 @@ export default function AdvertisementProfile({
   );
   return (
     <main
-      className="min-h-screen bg-[#f7f6f2] px-4 py-6 text-[#202a27] sm:px-6 sm:py-10"
+      className="min-h-screen bg-[#f7f6f2] py-0 text-[#202a27] sm:px-6 sm:py-10"
       dir="rtl"
     >
       {showRewardGate && (
@@ -308,14 +308,16 @@ export default function AdvertisementProfile({
           </div>
         </div>
       )}
-      <div className="mx-auto max-w-3xl">
+      <div className="relative mx-auto w-full max-w-3xl">
         <Link
           href="/"
-          className="mb-5 inline-flex items-center gap-2 rounded-lg border border-[#dedfd8] bg-white px-3 py-2 text-sm font-bold text-[#173f3a]"
+          aria-label="العودة إلى الرئيسية"
+          title="الرئيسية"
+          className="absolute left-3 top-3 z-20 grid size-9 place-items-center rounded-lg border border-[#dedfd8] bg-white/95 text-[#173f3a] shadow-sm"
         >
-          <ArrowRight size={16} /> الرئيسية
+          <ArrowRight size={17} />
         </Link>
-        <article className="overflow-hidden rounded-xl border border-[#dedfd8] bg-[#fffdf9] shadow-[0_12px_32px_#173f3a0d]">
+        <article className="overflow-hidden border-y border-[#dedfd8] bg-[#fffdf9] shadow-[0_12px_32px_#173f3a0d] sm:rounded-xl sm:border">
           <div className="border-b border-[#e7e7df] p-5 sm:p-7">
             <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
             <div className="mt-3 flex items-center gap-3">
@@ -340,7 +342,7 @@ export default function AdvertisementProfile({
             </div>
           </div>
           {advertisement.media_type === "video" && advertisement.video_url ? (
-            <div className="mx-auto h-[75dvh] w-full max-w-[430px] overflow-hidden bg-black shadow-[0_18px_50px_#173f3a26] sm:my-6 sm:aspect-[9/16] sm:h-auto sm:max-h-[75vh] sm:rounded-2xl">
+            <div className="flex w-full justify-center overflow-hidden bg-[#18201e] sm:my-6">
                 <video
                   ref={videoRef}
                   src={advertisement.video_url}
@@ -352,7 +354,7 @@ export default function AdvertisementProfile({
                   onTimeUpdate={(event) =>
                     submitWatchReward(event.currentTarget.currentTime)
                   }
-                  className="size-full object-contain"
+                  className="block h-auto max-h-[70dvh] w-auto max-w-full object-contain sm:rounded-2xl"
                 />
             </div>
           ) : (

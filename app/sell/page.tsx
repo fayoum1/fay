@@ -6,7 +6,13 @@ import { FormEvent, useEffect, useState } from "react";
 import { Suspense } from "react";
 import {
   ArrowRight,
+  BadgeCheck,
+  Banknote,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
+  Clock3,
+  Coins,
   Eye,
   Heart,
   Home,
@@ -17,8 +23,10 @@ import {
   X,
   Megaphone,
   MousePointerClick,
+  Smartphone,
   Store,
   Users,
+  WalletCards,
 } from "lucide-react";
 
 type RewardRow = {
@@ -1030,23 +1038,8 @@ function SellPageContent() {
                       </p>
                     )}
                   </div>
-                  <div className="flex w-full gap-2 sm:w-auto">
-                    <Link
-                      href="/"
-                      className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-[#d8dfd6] bg-white px-3 text-sm font-bold text-[#173f3a] sm:flex-none"
-                    >
-                      <ArrowRight size={16} /> عودة
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => void logout()}
-                      className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-lg border border-[#efcaca] bg-white px-3 text-sm font-bold text-[#a9584d] sm:flex-none"
-                    >
-                      <LogOut size={16} /> تسجيل خروج
-                    </button>
-                  </div>
                 </div>
-                <div className="grid grid-cols-3 divide-x divide-x-reverse divide-[#e7e7df] text-center">
+                <div className={`${user.account_type === "ordinary" ? "hidden" : "grid"} grid-cols-3 divide-x divide-x-reverse divide-[#e7e7df] text-center`}>
                   <div className="p-3">
                     <strong className="block text-xl font-black text-[#173f3a]">
                       {user.account_type === "ordinary"
@@ -1078,107 +1071,133 @@ function SellPageContent() {
                 </div>
               </section>
               {user.account_type === "ordinary" ? (
-                <section className="grid gap-5">
-                  <div className="rounded-2xl border border-[#e0e1d9] bg-[#f7faf6] p-5">
-                    <h2 className="font-display text-xl font-bold text-[#173f3a]">
-                      لوحة مكافآتك
-                    </h2>
-                    <p className="mt-1 text-sm leading-6 text-[#72807a]">
-                      هذه الصفحة تعرض تفاعلاتك داخل الموقع فقط ومكافآتك من حملات
-                      المعلنين.
-                    </p>
-                    <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                      <div className="rounded-xl bg-white p-3 text-center">
-                        <strong className="block text-2xl text-[#173f3a]">
-                          {rewardSummary.points}
-                        </strong>
-                        <span className="text-xs text-[#72807a]">
-                          نقاط معتمدة
-                        </span>
+                <section className="grid gap-4">
+                  <div className="overflow-hidden rounded-xl bg-[#173f3a] text-white shadow-[0_14px_34px_rgba(23,63,58,0.18)]">
+                    <div className="flex items-start justify-between gap-4 px-5 pb-5 pt-6 sm:px-6">
+                      <div>
+                        <div className="mb-3 flex items-center gap-2 text-xs font-bold text-[#b9d2c8]">
+                          <WalletCards size={16} /> الرصيد المتاح
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <strong className="font-display text-4xl font-black tabular-nums sm:text-5xl">
+                            {rewardSummary.available_balance}
+                          </strong>
+                          <span className="pb-1 text-sm font-bold text-[#d8e7e1]">جنيه</span>
+                        </div>
                       </div>
-                      <button type="button" onClick={() => setShowWallet((current) => !current)} className="rounded-xl bg-white p-3 text-center transition hover:ring-2 hover:ring-[#c48738]">
-                        <strong className="block text-2xl text-[#c48738]">
-                          {rewardSummary.available_balance}
-                        </strong>
-                        <span className="text-xs text-[#72807a]">
-                          جنيه متاح للسحب
-                        </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowWallet((current) => !current)}
+                        className="grid size-11 shrink-0 place-items-center rounded-lg border border-white/20 bg-white/10 text-white transition hover:bg-white/15"
+                        aria-label={showWallet ? "إغلاق المحفظة" : "فتح المحفظة"}
+                        title={showWallet ? "إغلاق المحفظة" : "فتح المحفظة"}
+                      >
+                        {showWallet ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                       </button>
-                      <div className="rounded-xl bg-white p-3 text-center">
-                        <strong className="block text-2xl text-[#a9584d]">
-                          {rewardSummary.pending}
-                        </strong>
-                        <span className="text-xs text-[#72807a]">
-                          مكافآت قيد المراجعة، وتظهر قيمتها بعد الاعتماد
-                        </span>
+                    </div>
+                    <div className="border-t border-white/15 px-5 py-3 sm:px-6">
+                      <div className="mb-2 flex justify-between text-[11px] font-bold text-[#d8e7e1]">
+                        <span>الحد الأدنى للسحب</span>
+                        <span>{rewardSummary.minimum_withdrawal} جنيه</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/15">
+                        <div
+                          className="h-full rounded-full bg-[#f0bd65]"
+                          style={{ width: `${Math.min(100, (rewardSummary.available_balance / rewardSummary.minimum_withdrawal) * 100)}%` }}
+                        />
                       </div>
                     </div>
-                    {showWallet && (
-                      <div className="mt-4 grid gap-3 rounded-xl border border-[#e0e1d9] bg-white p-4">
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div className="flex min-h-24 items-center gap-3 rounded-lg border border-[#dce3db] bg-white p-4">
+                      <span className="hidden size-10 shrink-0 place-items-center rounded-lg bg-[#e7f0e9] text-[#39704f] sm:grid"><Coins size={20} /></span>
+                      <div><strong className="block text-2xl font-black tabular-nums text-[#173f3a]">{rewardSummary.points}</strong><span className="text-xs font-bold text-[#72807a]">نقاط معتمدة</span></div>
+                    </div>
+                    <div className="flex min-h-24 items-center gap-3 rounded-lg border border-[#eadfc9] bg-[#fffaf0] p-4">
+                      <span className="hidden size-10 shrink-0 place-items-center rounded-lg bg-[#f7e8ca] text-[#a66c20] sm:grid"><Clock3 size={20} /></span>
+                      <div><strong className="block text-2xl font-black tabular-nums text-[#8a5a1f]">{rewardSummary.pending}</strong><span className="text-xs font-bold text-[#7d715d]">قيد المراجعة</span></div>
+                    </div>
+                    <div className="col-span-2 flex min-h-24 items-center gap-3 rounded-lg border border-[#dce3db] bg-white p-4 sm:col-span-1">
+                      <span className="hidden size-10 shrink-0 place-items-center rounded-lg bg-[#eef0ea] text-[#173f3a] sm:grid"><BadgeCheck size={20} /></span>
+                      <div><strong className="block text-2xl font-black tabular-nums text-[#173f3a]">{rewardSummary.amount}</strong><span className="text-xs font-bold text-[#72807a]">جنيه معتمد</span></div>
+                    </div>
+                  </div>
+
+                  {showWallet && (
+                    <section className="overflow-hidden rounded-xl border border-[#dce3db] bg-white">
+                      <header className="flex items-center gap-3 border-b border-[#e8ece6] bg-[#f7faf6] px-4 py-4 sm:px-5">
+                        <span className="grid size-10 place-items-center rounded-lg bg-[#173f3a] text-white"><Smartphone size={19} /></span>
                         <div>
-                          <h3 className="font-bold text-[#173f3a]">المحفظة وسحب الأرباح</h3>
-                          <p className="mt-1 text-xs leading-5 text-[#72807a]">الحد الأدنى للسحب {rewardSummary.minimum_withdrawal} جنيه. عند الطلب يُحجز كامل الرصيد المتاح حتى تراجعه الإدارة وترسله إلى محفظتك.</p>
+                          <h2 className="font-display text-lg font-bold text-[#173f3a]">المحفظة والسحب</h2>
+                          <p className="text-xs text-[#72807a]">احفظ رقم محفظتك ثم اطلب تحويل كامل الرصيد المتاح.</p>
                         </div>
-                        <input value={walletNumber} onChange={(event) => setWalletNumber(event.target.value)} inputMode="tel" placeholder="رقم محفظة فودافون أو اتصالات أو أورنج أو WE" className={inputClass} />
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" disabled={saving} onClick={() => void submitWallet("save_wallet")} className="h-10 rounded-lg border border-[#d8dfd6] bg-white px-4 text-sm font-bold text-[#173f3a] disabled:opacity-50">حفظ رقم المحفظة</button>
-                          <button type="button" disabled={saving || rewardSummary.available_balance < rewardSummary.minimum_withdrawal} onClick={() => void submitWallet("withdraw")} className="h-10 rounded-lg bg-[#39704f] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">طلب سحب {rewardSummary.available_balance} جنيه</button>
+                      </header>
+                      <div className="grid gap-3 p-4 sm:p-5">
+                        <label className="grid gap-1.5 text-xs font-bold text-[#596963]">
+                          رقم المحفظة الإلكترونية
+                          <input value={walletNumber} onChange={(event) => setWalletNumber(event.target.value)} inputMode="tel" placeholder="فودافون أو اتصالات أو أورنج أو WE" className={inputClass} />
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <button type="button" disabled={saving} onClick={() => void submitWallet("save_wallet")} className="h-11 rounded-lg border border-[#cfd8cf] bg-white px-4 text-sm font-bold text-[#173f3a] disabled:opacity-50">حفظ رقم المحفظة</button>
+                          <button type="button" disabled={saving || rewardSummary.available_balance < rewardSummary.minimum_withdrawal} onClick={() => void submitWallet("withdraw")} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#39704f] px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-45"><Banknote size={17} /> طلب سحب الرصيد</button>
                         </div>
-                        {walletFeedback && (
-                          <p role="status" className={`rounded-lg px-3 py-2 text-sm font-bold ${walletFeedback.type === "success" ? "bg-[#eaf5ed] text-[#39704f]" : "bg-[#fbeceb] text-[#a9584d]"}`}>
-                            {walletFeedback.text}
-                          </p>
+                        {rewardSummary.available_balance < rewardSummary.minimum_withdrawal && (
+                          <p className="text-xs leading-5 text-[#8a6a3c]">يتبقى {Math.max(0, rewardSummary.minimum_withdrawal - rewardSummary.available_balance)} جنيه للوصول إلى الحد الأدنى للسحب.</p>
                         )}
-                        {!!withdrawals.length && (
-                          <div className="grid gap-2 border-t border-[#eef0ea] pt-3">
-                            {withdrawals.map((withdrawal) => <p key={withdrawal.id} className="text-xs text-[#596963]">طلب {withdrawal.amount} جنيه إلى {withdrawal.wallet_number}: {withdrawal.status === "pending" ? "قيد المراجعة" : withdrawal.status === "approved" ? "تم الاعتماد وجار الإرسال" : withdrawal.status === "paid" ? "تم الإرسال" : "مرفوض"}</p>)}
-                          </div>
+                        {walletFeedback && (
+                          <p role="status" className={`rounded-lg px-3 py-2 text-sm font-bold ${walletFeedback.type === "success" ? "bg-[#eaf5ed] text-[#39704f]" : "bg-[#fbeceb] text-[#a9584d]"}`}>{walletFeedback.text}</p>
                         )}
                       </div>
-                    )}
-                  </div>
-                  <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
-                    <h2 className="font-display text-xl font-bold text-[#173f3a]">
-                      سجل التفاعل والمكافآت
-                    </h2>
-                    <div className="mt-3 grid gap-2">
-                      {rewards.map((reward) => (
-                        <div
-                          key={reward.id}
-                          className="grid gap-2 rounded-xl border border-[#e7e7df] bg-white p-3 sm:grid-cols-[1fr_100px_100px_120px]"
-                        >
-                          <div>
-                            <p className="text-sm font-bold text-[#173f3a]">
-                              {reward.reason || "تفاعل مع إعلان"}
-                            </p>
-                            <p className="text-xs text-[#89918c]">
-                              {new Date(reward.created_at).toLocaleString(
-                                "ar-EG",
-                              )}
-                            </p>
+                      {!!withdrawals.length && (
+                        <div className="border-t border-[#e8ece6] px-4 py-4 sm:px-5">
+                          <h3 className="mb-3 text-xs font-black text-[#173f3a]">طلبات السحب السابقة</h3>
+                          <div className="grid gap-2">
+                            {withdrawals.map((withdrawal) => (
+                              <div key={withdrawal.id} className="flex items-center justify-between gap-3 rounded-lg bg-[#f7f8f5] px-3 py-2.5 text-xs">
+                                <div><strong className="block text-sm text-[#173f3a]">{withdrawal.amount} جنيه</strong><span className="text-[#89918c]">{withdrawal.wallet_number}</span></div>
+                                <span className={`shrink-0 rounded-md px-2 py-1 font-bold ${withdrawal.status === "paid" ? "bg-[#e5f2e9] text-[#39704f]" : withdrawal.status === "rejected" ? "bg-[#f8e9e6] text-[#a9584d]" : "bg-[#fff0d7] text-[#96631f]"}`}>{withdrawal.status === "pending" ? "قيد المراجعة" : withdrawal.status === "approved" ? "جار الإرسال" : withdrawal.status === "paid" ? "تم الإرسال" : "مرفوض"}</span>
+                              </div>
+                            ))}
                           </div>
-                          <span className="text-center text-xs font-bold">
-                            {reward.status === "approved" ? `${reward.points || 0} نقطة` : "تُحدد بعد الاعتماد"}
-                          </span>
-                          <span className="text-center text-xs font-bold text-[#c48738]">
-                            {reward.status === "approved" ? `${reward.amount || 0} جنيه` : "قيمة مخفية"}
-                          </span>
-                          <span className="text-center text-xs font-bold text-[#72807a]">
-                            {reward.status === "approved"
-                              ? "معتمد"
-                              : reward.status === "pending"
-                                ? "معلق"
-                                : "مرفوض"}
-                          </span>
                         </div>
+                      )}
+                    </section>
+                  )}
+
+                  <section className="overflow-hidden rounded-xl border border-[#dce3db] bg-white">
+                    <header className="flex items-center justify-between gap-3 border-b border-[#e8ece6] px-4 py-4 sm:px-5">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-10 place-items-center rounded-lg bg-[#eef0ea] text-[#173f3a]"><Clock3 size={19} /></span>
+                        <div><h2 className="font-display text-lg font-bold text-[#173f3a]">سجل المكافآت</h2><p className="text-xs text-[#72807a]">آخر التفاعلات وحالة اعتمادها</p></div>
+                      </div>
+                      <span className="text-xs font-bold text-[#89918c]">{rewards.length} تفاعل</span>
+                    </header>
+                    <div className="divide-y divide-[#edf0eb]">
+                      {rewards.map((reward) => (
+                        <article key={reward.id} className="p-4 sm:px-5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-[#173f3a]">{reward.reason || "تفاعل مع إعلان"}</p>
+                              <p className="mt-1 text-[11px] text-[#89918c]">{new Date(reward.created_at).toLocaleString("ar-EG")}</p>
+                            </div>
+                            <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-bold ${reward.status === "approved" ? "bg-[#e5f2e9] text-[#39704f]" : reward.status === "pending" ? "bg-[#fff0d7] text-[#96631f]" : "bg-[#f8e9e6] text-[#a9584d]"}`}>{reward.status === "approved" ? "معتمد" : reward.status === "pending" ? "قيد المراجعة" : "مرفوض"}</span>
+                          </div>
+                          <div className="mt-3 flex items-center gap-4 text-xs font-bold">
+                            <span className="inline-flex items-center gap-1.5 text-[#173f3a]"><Coins size={14} /> {reward.status === "approved" ? `${reward.points || 0} نقطة` : "النقاط بعد الاعتماد"}</span>
+                            <span className="inline-flex items-center gap-1.5 text-[#a66c20]"><Banknote size={14} /> {reward.status === "approved" ? `${reward.amount || 0} جنيه` : "القيمة بعد الاعتماد"}</span>
+                          </div>
+                        </article>
                       ))}
                       {!rewards.length && (
-                        <p className="py-8 text-center text-sm text-[#89918c]">
-                          لم تسجل تفاعلات مكافأة بعد.
-                        </p>
+                        <div className="grid place-items-center px-4 py-12 text-center">
+                          <span className="mb-3 grid size-12 place-items-center rounded-full bg-[#eef0ea] text-[#72807a]"><Clock3 size={22} /></span>
+                          <p className="text-sm font-bold text-[#596963]">لا توجد مكافآت حتى الآن</p>
+                          <p className="mt-1 text-xs text-[#89918c]">ستظهر هنا التفاعلات المؤهلة بعد مشاركتك في الحملات.</p>
+                        </div>
                       )}
                     </div>
-                  </div>
+                  </section>
                 </section>
               ) : createMode === null ? (
                 <section className="grid gap-3 sm:grid-cols-2">

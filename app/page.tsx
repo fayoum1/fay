@@ -3266,7 +3266,7 @@ function MarketingManager({
 
 function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertisement[] }) {
   return (
-    <div className="mb-2 overflow-hidden" aria-label="الإعلانات المقبولة">
+    <div className="my-2 overflow-hidden" aria-label="الإعلانات المقبولة">
       <div className="advertisement-strip flex w-max min-w-full items-center gap-3">
         {advertisements.map((advertisement) => {
           const content = (
@@ -3681,6 +3681,7 @@ function RewardCampaignManager() {
   const [draft, setDraft] = useState({ advertisement_id: "", name: "", reward_mode: "points", budget: "0", max_recipients: "", per_user_limit: "1", action_type: "referral", reward_points: "1", reward_amount: "0", required_seconds: "" });
   const [message, setMessage] = useState("");
   const [rewards, setRewards] = useState<Array<{ id: number; status: string; points: number; amount: number; reason?: string | null; created_at: string; market_users?: { display_name?: string; phone?: string }; ad_reward_campaigns?: { name?: string } }>>([]);
+  const [selectedRewardIds, setSelectedRewardIds] = useState<number[]>([]);
   const [withdrawals, setWithdrawals] = useState<Array<{ id: number; amount: number; wallet_number: string; status: string; created_at: string; market_users?: { display_name?: string; phone?: string } }>>([]);
 
   const load = async () => {
@@ -3690,7 +3691,10 @@ function RewardCampaignManager() {
     setCampaigns(result.campaigns || []); setAdvertisements(result.advertisements || []);
     const rewardResponse = await fetch("/api/admin/reward-ledger");
     const rewardResult = await rewardResponse.json().catch(() => ({}));
-    if (rewardResponse.ok) setRewards(rewardResult.rewards || []);
+    if (rewardResponse.ok) {
+      setRewards(rewardResult.rewards || []);
+      setSelectedRewardIds([]);
+    }
     const withdrawalResponse = await fetch("/api/admin/withdrawals");
     const withdrawalResult = await withdrawalResponse.json().catch(() => ({}));
     if (withdrawalResponse.ok) setWithdrawals(withdrawalResult.withdrawals || []);
@@ -3716,7 +3720,34 @@ function RewardCampaignManager() {
 
   const changeRewardStatus = async (id: number, status: string) => {
     const response = await fetch("/api/admin/reward-ledger", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
-    if (!response.ok) return setMessage("تعذر تحديث المكافأة");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحديث المكافأة");
+    setMessage("");
+    await load();
+  };
+
+  const pendingRewards = rewards.filter((reward) => reward.status === "pending");
+  const allPendingRewardsSelected = pendingRewards.length > 0 && pendingRewards.every((reward) => selectedRewardIds.includes(reward.id));
+
+  const toggleRewardSelection = (id: number) => {
+    setSelectedRewardIds((current) => current.includes(id) ? current.filter((rewardId) => rewardId !== id) : [...current, id]);
+  };
+
+  const toggleAllPendingRewards = () => {
+    setSelectedRewardIds(allPendingRewardsSelected ? [] : pendingRewards.map((reward) => reward.id));
+  };
+
+  const approveSelectedRewards = async () => {
+    if (!selectedRewardIds.length) return;
+    setMessage("");
+    const results = await Promise.all(selectedRewardIds.map(async (id) => {
+      const response = await fetch("/api/admin/reward-ledger", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: "approved" }) });
+      const result = await response.json().catch(() => ({}));
+      return { ok: response.ok, error: result.error as string | undefined };
+    }));
+    const failed = results.find((result) => !result.ok);
+    if (failed) setMessage(failed.error || "تعذر اعتماد بعض المكافآت");
+    else setMessage(`تم اعتماد ${selectedRewardIds.length} مكافأة`);
     await load();
   };
 
@@ -3732,7 +3763,30 @@ function RewardCampaignManager() {
       <div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">مراجعة حملات المعلنين</p><h2 className="font-display text-xl font-bold text-[#173f3a]">حملات المكافآت</h2><p className="mt-1 text-xs leading-5 text-[#72807a]">ينشئ المعلن حملته مع إعلانه، ودور الإدارة مراجعتها وتفعيلها أو إيقافها فقط.</p></div>
       <form onSubmit={createCampaign} className="grid gap-2 rounded-xl bg-[#f7faf6] p-3 sm:grid-cols-[1fr_1.2fr_120px_120px_120px_120px_120px_120px_auto]"><select required value={draft.advertisement_id} onChange={(event) => setDraft({ ...draft, advertisement_id: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="">اختر الإعلان</option>{advertisements.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="اسم الحملة" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><select value={draft.reward_mode} onChange={(event) => setDraft({ ...draft, reward_mode: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="points">نقاط</option><option value="discount">خصم</option><option value="gift">هدية</option><option value="cash">نقدي معلق</option></select><select value={draft.action_type} onChange={(event) => setDraft({ ...draft, action_type: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="referral">إحالة</option><option value="view">مشاهدة</option><option value="like">إعجاب</option><option value="share">مشاركة</option></select><input required type="number" min="0" value={draft.reward_points} onChange={(event) => setDraft({ ...draft, reward_points: event.target.value })} placeholder="النقاط" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input required type="number" min="0" step="0.01" value={draft.reward_amount} onChange={(event) => setDraft({ ...draft, reward_amount: event.target.value })} placeholder="المبلغ" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input required type="number" min="0" step="1" value={draft.budget} onChange={(event) => setDraft({ ...draft, budget: event.target.value })} placeholder="الميزانية" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input type="number" min="1" value={draft.max_recipients} onChange={(event) => setDraft({ ...draft, max_recipients: event.target.value })} placeholder="عدد المستفيدين" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><button className="h-10 rounded-lg bg-[#173f3a] px-3 text-xs font-bold text-white">إنشاء</button></form>
       <div className="mt-4 grid gap-2">{campaigns.map((campaign) => <div key={campaign.id} className="rounded-xl border border-[#e7e7df] bg-white p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_110px_150px_auto]"><div><p className="text-sm font-bold text-[#173f3a]">{campaign.name}</p><p className="text-xs text-[#72807a]">{campaign.advertisements?.title || `إعلان #${campaign.advertisement_id}`} | ميزانية {campaign.budget}</p></div><span className="grid place-items-center text-xs font-bold text-[#c48738]">{campaign.reward_mode}</span><span className="grid place-items-center text-xs font-bold text-[#596963]">{campaign.status}</span><span className="grid place-items-center text-xs text-[#72807a]">حد المستفيدين: {campaign.max_recipients || "مفتوح"}</span><select value={campaign.status} onChange={(event) => void changeStatus(campaign.id, event.target.value)} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option value="draft">مسودة</option><option value="active">تفعيل</option><option value="paused">إيقاف مؤقت</option><option value="completed">مكتملة</option><option value="closed">إغلاق</option></select></div>{campaign.stats && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#eef0ea] pt-3 text-center text-xs sm:grid-cols-3 lg:grid-cols-6"><span><strong className="block text-[#173f3a]">{campaign.stats.participant_count}</strong><span className="text-[#72807a]">الأشخاص</span></span><span><strong className="block text-[#173f3a]">{campaign.stats.interaction_count}</strong><span className="text-[#72807a]">تفاعل مؤهل</span></span><span><strong className="block text-[#c48738]">{campaign.stats.current_entitlement} جنيه</strong><span className="text-[#72807a]">المستحق الحالي</span></span><span><strong className="block text-[#596963]">{campaign.stats.pending_amount} جنيه / {campaign.stats.pending_points} نقطة</strong><span className="text-[#72807a]">معلّق</span></span><span><strong className="block text-[#39704f]">{campaign.stats.approved_amount} جنيه / {campaign.stats.approved_points} نقطة</strong><span className="text-[#72807a]">معتمد</span></span>{campaign.stats.estimated_share !== null && <span><strong className="block text-[#a9584d]">{campaign.stats.estimated_share} جنيه</strong><span className="text-[#72807a]">النصيب التقديري للتفاعل</span></span>}</div>}</div>)}{!campaigns.length && <p className="py-6 text-center text-sm text-[#89918c]">لا توجد حملات مكافآت.</p>}</div>
-      <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3"><h3 className="font-bold text-[#173f3a]">المكافآت المعلقة</h3><div className="mt-2 grid gap-2">{rewards.filter((reward) => reward.status === "pending").map((reward) => <div key={reward.id} className="grid gap-2 rounded-lg bg-white p-3 text-xs sm:grid-cols-[1fr_100px_100px_auto_auto]"><div><strong>{reward.market_users?.display_name || "مستخدم"}</strong><span className="mr-2 text-[#72807a]">{reward.market_users?.phone || ""}</span><p className="mt-1 text-[#72807a]">{reward.reason || "مكافأة حملة"}</p></div><span className="grid place-items-center font-bold">{reward.points} نقطة</span><span className="grid place-items-center font-bold text-[#c48738]">{reward.amount} جنيه</span><button onClick={() => void changeRewardStatus(reward.id, "approved")} className="h-9 rounded-lg bg-[#39704f] px-3 font-bold text-white">اعتماد</button><button onClick={() => void changeRewardStatus(reward.id, "rejected")} className="h-9 rounded-lg bg-[#a9584d] px-3 font-bold text-white">رفض</button></div>)}{!rewards.some((reward) => reward.status === "pending") && <p className="py-4 text-center text-xs text-[#89918c]">لا توجد مكافآت معلقة.</p>}</div></div>
+      <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 font-bold text-[#173f3a]">
+            <input type="checkbox" checked={allPendingRewardsSelected} onChange={toggleAllPendingRewards} disabled={!pendingRewards.length} className="size-4 accent-[#39704f]" />
+            تحديد الكل
+          </label>
+          <button type="button" onClick={() => void approveSelectedRewards()} disabled={!selectedRewardIds.length} className="h-9 rounded-lg bg-[#39704f] px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-45">اعتماد المحدد ({selectedRewardIds.length})</button>
+        </div>
+        <div className="mt-3 max-h-[45rem] overflow-y-auto overscroll-contain pl-1">
+          <div className="grid gap-2">
+            {pendingRewards.map((reward) => (
+              <div key={reward.id} className="grid min-h-16 gap-2 rounded-lg bg-white p-3 text-xs sm:grid-cols-[28px_1fr_100px_100px_auto_auto] sm:items-center">
+                <input type="checkbox" checked={selectedRewardIds.includes(reward.id)} onChange={() => toggleRewardSelection(reward.id)} aria-label={`تحديد مكافأة ${reward.market_users?.display_name || "المستخدم"}`} className="size-4 accent-[#39704f]" />
+                <div><strong>{reward.market_users?.display_name || "مستخدم"}</strong><span className="mr-2 text-[#72807a]">{reward.market_users?.phone || ""}</span><p className="mt-1 text-[#72807a]">{reward.reason || "مكافأة حملة"}</p></div>
+                <span className="grid place-items-center font-bold">{reward.points} نقطة</span>
+                <span className="grid place-items-center font-bold text-[#c48738]">{reward.amount} جنيه</span>
+                <button type="button" onClick={() => void changeRewardStatus(reward.id, "approved")} className="h-9 rounded-lg bg-[#39704f] px-3 font-bold text-white">اعتماد</button>
+                <button type="button" onClick={() => void changeRewardStatus(reward.id, "rejected")} className="h-9 rounded-lg bg-[#a9584d] px-3 font-bold text-white">رفض</button>
+              </div>
+            ))}
+            {!pendingRewards.length && <p className="py-4 text-center text-xs text-[#89918c]">لا توجد مكافآت معلقة.</p>}
+          </div>
+        </div>
+      </div>
       <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3"><h3 className="font-bold text-[#173f3a]">طلبات سحب الأرباح</h3><div className="mt-2 grid gap-2">{withdrawals.map((withdrawal) => <div key={withdrawal.id} className="grid gap-2 rounded-lg bg-white p-3 text-xs sm:grid-cols-[1fr_110px_130px_110px_auto]"><div><strong>{withdrawal.market_users?.display_name || "مستخدم"}</strong><span className="mr-2 text-[#72807a]">{withdrawal.market_users?.phone || ""}</span><p className="mt-1 text-[#72807a]">{new Date(withdrawal.created_at).toLocaleString("ar-EG")}</p></div><span className="grid place-items-center font-bold text-[#c48738]">{withdrawal.amount} جنيه</span><span className="grid place-items-center font-bold">{withdrawal.wallet_number}</span><span className="grid place-items-center font-bold text-[#596963]">{withdrawal.status === "pending" ? "قيد المراجعة" : withdrawal.status === "approved" ? "معتمد" : withdrawal.status === "paid" ? "تم الإرسال" : "مرفوض"}</span><div className="flex gap-1">{withdrawal.status === "pending" && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "approved")} className="h-9 rounded-lg bg-[#39704f] px-3 font-bold text-white">اعتماد</button>}{withdrawal.status === "approved" && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "paid")} className="h-9 rounded-lg bg-[#173f3a] px-3 font-bold text-white">تم الإرسال</button>}{["pending", "approved"].includes(withdrawal.status) && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "rejected")} className="h-9 rounded-lg bg-[#a9584d] px-3 font-bold text-white">رفض</button>}</div></div>)}{!withdrawals.length && <p className="py-4 text-center text-xs text-[#89918c]">لا توجد طلبات سحب.</p>}</div></div>
       {message && <p className="mt-3 text-center text-sm font-bold text-[#a9584d]">{message}</p>}
     </section>
