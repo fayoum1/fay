@@ -342,6 +342,7 @@ function SellPageContent() {
     reward_points: "1",
     reward_amount: "0",
     reward_budget: "0",
+    product_price: "",
     max_recipients: "",
     required_seconds: "30",
   });
@@ -516,6 +517,13 @@ function SellPageContent() {
     Object.entries(adForm).forEach(([key, value]) =>
       body.append(key, String(value)),
     );
+    if (adForm.reward_mode === "discount") {
+      const discountBudget =
+        Number(adForm.product_price || 0) *
+        (Number(adForm.reward_amount || 0) / 100) *
+        Number(adForm.max_recipients || 0);
+      body.set("reward_budget", discountBudget.toFixed(2));
+    }
     if (adImage) body.append("media", adImage);
     const response = await fetch("/api/advertisements", {
       method: "POST",
@@ -1626,24 +1634,58 @@ function SellPageContent() {
                                 />
                               </label>
                             )}
+                            {adForm.reward_mode === "discount" && (
+                              <label className="grid gap-1 text-sm font-bold text-[#596963]">
+                                سعر المنتج
+                                <span className="text-xs font-normal text-[#89918c]">
+                                  السعر قبل تطبيق الخصم بالجنيه
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0.01"
+                                  step="0.01"
+                                  required
+                                  value={adForm.product_price}
+                                  onChange={(event) =>
+                                    setAdForm({
+                                      ...adForm,
+                                      product_price: event.target.value,
+                                    })
+                                  }
+                                  placeholder="مثال: 200"
+                                  className={inputClass}
+                                />
+                              </label>
+                            )}
                             <label className="grid gap-1 text-sm font-bold text-[#596963]">
                               إجمالي ميزانية المكافآت
                               <span className="text-xs font-normal text-[#89918c]">
-                                الحد المالي الكامل للحملة بالجنيه
+                                {adForm.reward_mode === "discount"
+                                  ? "السعر × نسبة الخصم × عدد المستفيدين"
+                                  : "الحد المالي الكامل للحملة بالجنيه"}
                               </span>
                               <input
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                value={adForm.reward_budget}
+                                value={
+                                  adForm.reward_mode === "discount"
+                                    ? (
+                                        Number(adForm.product_price || 0) *
+                                        (Number(adForm.reward_amount || 0) / 100) *
+                                        Number(adForm.max_recipients || 0)
+                                      ).toFixed(2)
+                                    : adForm.reward_budget
+                                }
                                 onChange={(event) =>
                                   setAdForm({
                                     ...adForm,
                                     reward_budget: event.target.value,
                                   })
                                 }
+                                readOnly={adForm.reward_mode === "discount"}
                                 placeholder="مثال: 1000"
-                                className={inputClass}
+                                className={`${inputClass} ${adForm.reward_mode === "discount" ? "bg-[#f1f3ee]" : ""}`}
                               />
                             </label>
                           </div>
@@ -1656,6 +1698,7 @@ function SellPageContent() {
                               <input
                                 type="number"
                                 min="1"
+                                required={adForm.reward_mode === "discount"}
                                 value={adForm.max_recipients}
                                 onChange={(event) =>
                                   setAdForm({

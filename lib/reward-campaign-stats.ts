@@ -36,7 +36,7 @@ export async function getRewardCampaignStats(
   const [{ data: campaigns, error: campaignsError }, { data: rewards, error: rewardsError }] = await Promise.all([
     client
       .from("ad_reward_campaigns")
-      .select("id,advertisement_id,reward_mode,budget,ad_reward_actions(id,reward_amount,enabled)")
+      .select("id,advertisement_id,reward_mode,budget,product_price,ad_reward_actions(id,reward_amount,reward_label,enabled)")
       .in("id", campaignIds),
     client
       .from("ad_reward_ledger")
@@ -73,6 +73,14 @@ export async function getRewardCampaignStats(
     const approvedRewards = campaignRewards.filter((reward) => reward.status === "approved");
     const fixedAmount = fixedRewards.reduce((sum, reward) => sum + Number(reward.amount || 0), 0);
     const pooledAmount = pooledRewards.length ? Number(campaign.budget || 0) : 0;
+    const discountPercent = Number(
+      (campaign.ad_reward_actions || [])
+        .find((action) => action.enabled)
+        ?.reward_label?.match(/[\d.]+/)?.[0] || 0,
+    );
+    const discountAmount = campaign.reward_mode === "discount"
+      ? campaignRewards.length * Number(campaign.product_price || 0) * (discountPercent / 100)
+      : 0;
 
     stats.set(campaign.id, {
       audience_count: new Set(campaignEngagements.map((engagement) => engagement.visitor_key)).size,
@@ -83,7 +91,7 @@ export async function getRewardCampaignStats(
       approved_amount: Number(approvedRewards.reduce((sum, reward) => sum + Number(reward.amount || 0), 0).toFixed(2)),
       pending_points: pendingRewards.reduce((sum, reward) => sum + Number(reward.points || 0), 0),
       approved_points: approvedRewards.reduce((sum, reward) => sum + Number(reward.points || 0), 0),
-      current_entitlement: Number((fixedAmount + pooledAmount).toFixed(2)),
+      current_entitlement: Number((fixedAmount + pooledAmount + discountAmount).toFixed(2)),
       estimated_share: pooledRewards.length
         ? Number((Number(campaign.budget || 0) / pooledRewards.length).toFixed(2))
         : null,
