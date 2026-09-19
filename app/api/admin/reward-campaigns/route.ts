@@ -67,6 +67,13 @@ export async function PATCH(request: NextRequest) {
   }
   const { data, error } = await client.from("ad_reward_campaigns").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (["completed", "closed"].includes(body.status)) {
+    const { error: advertisementError } = await client
+      .from("advertisements")
+      .update({ status: "منتهي", featured: false, ends_at: new Date().toISOString() })
+      .eq("id", data.advertisement_id);
+    if (advertisementError) return NextResponse.json({ error: advertisementError.message }, { status: 400 });
+  }
   return NextResponse.json(data);
 }
 

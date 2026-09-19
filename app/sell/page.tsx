@@ -742,6 +742,15 @@ function SellPageContent() {
             >
               <Home size={17} /> الرئيسية
             </Link>
+            {user && (
+              <button
+                type="button"
+                onClick={() => void logout()}
+                className="hidden h-10 items-center gap-2 rounded-xl border border-[#efcaca] bg-white px-3 text-sm font-bold text-[#a9584d] sm:inline-flex"
+              >
+                <LogOut size={17} /> خروج
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setMobileMenuOpen((current) => !current)}
