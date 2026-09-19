@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const amount = Number(action.reward_amount || 0);
     const points = Number(action.reward_points || 0);
     const badge = campaign.reward_mode === "cash"
-      ? amount > 0 ? `${amount} جنيه` : "مكافأة نقدية"
+      ? amount > 0 ? `مكافأة نقدية = ${amount} جنيه` : Number(campaign.budget || 0) > 0 ? `مكافأة نقدية = ${Number(campaign.budget)} جنيه` : "مكافأة نقدية"
       : campaign.reward_mode === "discount"
         ? action.reward_label || "خصم"
         : campaign.reward_mode === "gift"

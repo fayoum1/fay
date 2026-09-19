@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  Eye,
   ExternalLink,
   Heart,
   MessageCircle,
@@ -25,6 +26,7 @@ type Advertisement = {
   views?: number;
   clicks?: number;
   likes?: number;
+  referrals?: number;
   advertiser_profile?: {
     display_name: string;
     phone: string;
@@ -34,6 +36,7 @@ type Advertisement = {
   watch_required_seconds?: number | null;
   reward_campaign?: {
     reward_mode: "points" | "discount" | "gift" | "cash";
+    reward_badge: string;
     max_recipients: number | null;
     per_user_limit: number;
     payout_mode: "fixed" | "pool";
@@ -52,6 +55,15 @@ const rewardActionLabels = {
   like: "الإعجاب بالإعلان",
   share: "مشاركة الإعلان",
 };
+
+function formatCount(value?: number) {
+  const count = Number(value || 0);
+  if (count < 1000) return String(count);
+  const divisor = count >= 1_000_000 ? 1_000_000 : 1000;
+  const suffix = divisor === 1_000_000 ? "M" : "K";
+  const compact = count / divisor;
+  return `${compact >= 10 ? Math.floor(compact) : Number(compact.toFixed(1))}${suffix}`;
+}
 
 type MarketUser = {
   account_type?: "ordinary" | "market";
@@ -77,6 +89,26 @@ export default function AdvertisementProfile({
   const [interactionMessage, setInteractionMessage] = useState("");
   const [showRewardGate, setShowRewardGate] = useState(false);
   const [watchLoginPrompted, setWatchLoginPrompted] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !advertisement?.video_url) return;
+
+    const playWithSound = () => {
+      video.muted = false;
+      void video.play().catch(() => undefined);
+    };
+
+    video.muted = false;
+    void video.play().catch(() => {
+      video.muted = true;
+      void video.play().catch(() => undefined);
+      window.addEventListener("pointerdown", playWithSound, { once: true });
+    });
+
+    return () => window.removeEventListener("pointerdown", playWithSound);
+  }, [advertisement?.video_url]);
 
   const visitorKey = () => {
     const key = window.localStorage.getItem("advertisement_visitor_key");
@@ -147,6 +179,9 @@ export default function AdvertisementProfile({
           setAdvertisement(data);
           void engage(Number(id), "view").then((result) => {
             if (result?.liked) setLiked(true);
+            setAdvertisement((current) =>
+              current ? { ...current, views: Number(result?.views || current.views || 0) } : current,
+            );
           }).catch(() => undefined);
         })
         .catch((reason: Error) => setError(reason.message));
@@ -185,6 +220,12 @@ export default function AdvertisementProfile({
     } catch {
       setShareMessage("يمكنك نسخ رابط الإعلان من المتصفح");
     }
+  };
+
+  const trackClick = () => {
+    void engage(advertisement!.id, "click").then((result) => {
+      setAdvertisement((current) => current ? { ...current, clicks: Number(result.clicks || 0) } : current);
+    }).catch(() => undefined);
   };
 
   if (error)
@@ -299,34 +340,20 @@ export default function AdvertisementProfile({
             </div>
           </div>
           {advertisement.media_type === "video" && advertisement.video_url ? (
-            <div>
-              <div className="relative mx-auto aspect-[9/16] w-full max-w-[430px] overflow-hidden bg-black shadow-[0_18px_50px_#173f3a26] sm:my-6 sm:rounded-2xl">
+            <div className="mx-auto h-[80dvh] w-full max-w-[430px] overflow-hidden bg-black shadow-[0_18px_50px_#173f3a26] sm:my-6 sm:aspect-[9/16] sm:h-auto sm:max-h-[76vh] sm:rounded-2xl">
                 <video
+                  ref={videoRef}
                   src={advertisement.video_url}
-                  muted
+                  controls
                   autoPlay
                   loop
                   playsInline
-                  aria-hidden="true"
-                  className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-xl"
-                />
-                <video
-                  src={advertisement.video_url}
-                  controls
-                  playsInline
-                  preload="metadata"
+                  preload="auto"
                   onTimeUpdate={(event) =>
                     submitWatchReward(event.currentTarget.currentTime)
                   }
-                  className="relative z-10 size-full object-contain"
+                  className="size-full object-contain"
                 />
-              </div>
-              {advertisement.watch_required_seconds && (
-                <p className="px-5 py-3 text-center text-xs font-bold text-[#72807a]">
-                  شاهد الفيديو لمدة {advertisement.watch_required_seconds} ثانية
-                  للحصول على مكافأة الحملة إن كنت مسجلًا.
-                </p>
-              )}
             </div>
           ) : (
             advertisement.image_url && (
@@ -346,21 +373,26 @@ export default function AdvertisementProfile({
             )
           )}
           <div className="border-b border-[#e7e7df] px-5 py-4 sm:px-7">
-            <div className="flex flex-wrap gap-2">
+            <div className="flex w-full items-center justify-evenly divide-x divide-x-reverse divide-[#e1e5df] border-y border-[#e1e5df]">
+              <div aria-label="المشاهدات" title="المشاهدات" className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]">
+                <Eye size={19} />
+                <span className="text-xs font-black tabular-nums">{formatCount(advertisement.views)}</span>
+              </div>
               {whatsapp && (
                 <a
                   aria-label="واتساب"
                   title="واتساب"
                   onClick={(event) => {
                     if (!requireRewardsAccount()) event.preventDefault();
-                    else void engage(advertisement.id, "click");
+                    else trackClick();
                   }}
                   href={`https://wa.me/${whatsapp}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex size-11 items-center justify-center rounded-lg bg-[#25a866] text-white"
+                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#16804a]"
                 >
                   <MessageCircle size={19} />
+                  <span className="text-xs font-black tabular-nums">{formatCount(advertisement.clicks)}</span>
                 </a>
               )}
               {whatsapp && (
@@ -369,12 +401,13 @@ export default function AdvertisementProfile({
                   title="اتصال"
                   onClick={(event) => {
                     if (!requireRewardsAccount()) event.preventDefault();
-                    else void engage(advertisement.id, "click");
+                    else trackClick();
                   }}
                   href={`tel:${whatsapp}`}
-                  className="inline-flex size-11 items-center justify-center rounded-lg bg-[#173f3a] text-white"
+                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]"
                 >
                   <Phone size={19} />
+                  <span className="text-xs font-black tabular-nums">{formatCount(advertisement.clicks)}</span>
                 </a>
               )}
               {advertisement.target_url && (
@@ -383,14 +416,15 @@ export default function AdvertisementProfile({
                   title="الرابط الخارجي"
                   onClick={(event) => {
                     if (!requireRewardsAccount()) event.preventDefault();
-                    else void engage(advertisement.id, "click");
+                    else trackClick();
                   }}
                   href={advertisement.target_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex size-11 items-center justify-center rounded-lg border border-[#dedfd8] bg-white text-[#173f3a]"
+                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]"
                 >
                   <ExternalLink size={19} />
+                  <span className="text-xs font-black tabular-nums">{formatCount(advertisement.clicks)}</span>
                 </a>
               )}
               <button
@@ -398,9 +432,10 @@ export default function AdvertisementProfile({
                 aria-label="مشاركة الإعلان"
                 title="مشاركة"
                 onClick={() => void shareAdvertisement()}
-                className="inline-flex size-11 items-center justify-center rounded-lg border border-[#dedfd8] bg-white text-[#173f3a]"
+                className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]"
               >
                 <Share2 size={19} />
+                <span className="text-xs font-black tabular-nums">{formatCount(advertisement.referrals)}</span>
               </button>
               <button
                 type="button"
@@ -426,11 +461,22 @@ export default function AdvertisementProfile({
                     })
                     .catch((reason: Error) => setInteractionMessage(reason.message));
                 }}
-                className={`inline-flex size-11 items-center justify-center rounded-lg ${liked ? "bg-[#f7d6df] text-[#934563]" : "border border-[#dedfd8] bg-white text-[#173f3a]"}`}
+                className={`inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 ${liked ? "text-[#a13f61]" : "text-[#173f3a]"}`}
               >
                 <Heart size={19} fill={liked ? "currentColor" : "none"} />
+                <span className="text-xs font-black tabular-nums">{formatCount(advertisement.likes)}</span>
               </button>
             </div>
+            {advertisement.reward_campaign?.reward_badge && (
+              <p className="mt-3 text-sm font-black text-[#39704f]">
+                {advertisement.reward_campaign.reward_badge}
+              </p>
+            )}
+            {advertisement.watch_required_seconds && (
+              <p className="mt-1 text-xs font-bold text-[#72807a]">
+                شاهد الفيديو لمدة {advertisement.watch_required_seconds} ثانية للحصول على مكافأة الحملة إن كنت مسجلًا.
+              </p>
+            )}
             {shareMessage && (
               <p className="mt-3 text-xs font-bold text-[#39704f]">
                 {shareMessage}

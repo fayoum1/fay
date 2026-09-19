@@ -339,19 +339,25 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let closeTimer: number | undefined;
+    let cancelled = false;
     fetch("/api/advertisements")
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
+        if (cancelled) return;
         const accepted = Array.isArray(data?.advertisements) ? data.advertisements : [];
         setAdvertisements(accepted);
         const featured = accepted.find((item: PublicAdvertisement) => item.featured);
-        if (featured && !window.sessionStorage.getItem(`featured-ad-${featured.id}`)) {
+        if (featured) {
           setFeaturedAdvertisement(featured);
-          window.sessionStorage.setItem(`featured-ad-${featured.id}`, "shown");
-          window.setTimeout(() => setFeaturedAdvertisement(null), 10000);
+          closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), 15000);
         }
       })
       .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      if (closeTimer) window.clearTimeout(closeTimer);
+    };
   }, []);
 
   const filteredItems = menuItems.filter(
@@ -1467,7 +1473,7 @@ export default function Home() {
           </div>
         </div>
       )}
-      {featuredAdvertisement && <FeaturedAdvertisement advertisement={featuredAdvertisement} onClose={() => setFeaturedAdvertisement(null)} />}
+      {featuredAdvertisement && <FeaturedAdvertisement advertisement={featuredAdvertisement} />}
       {appUpdate && (
         <div className="fixed inset-x-4 bottom-4 z-50 flex items-center justify-between gap-3 rounded-xl bg-[#173f3a] px-4 py-3 text-right text-sm font-bold text-white shadow-2xl sm:left-auto sm:right-4 sm:max-w-sm">
           <span>توجد نسخة جديدة من التطبيق</span>
@@ -1579,7 +1585,7 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <div className="sticky top-[78px] z-20 min-w-0 w-full max-w-full border-b border-[#dedfd8] bg-[#f7f6f2] py-2 shadow-sm overflow-x-auto overscroll-x-contain pb-2 [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
+              <div className="sticky top-[78px] z-20 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-b border-[#dedfd8] bg-[#f7f6f2] px-0 pb-1 pt-2 shadow-sm [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
                 <div className="flex w-max min-w-full flex-nowrap gap-2">
                 <button
                   type="button"
@@ -2050,7 +2056,7 @@ export default function Home() {
           ) : adminTab === "sellers" && userRole === "admin" ? (
             <SellersManager />
           ) : adminTab === "advertisements" && userRole === "admin" ? (
-            <div className="grid gap-5"><AdvertisementsManager /><AdvertisementOperations /><RewardCampaignManager /></div>
+            <div className="grid gap-5"><AdminAdvertisementsWorkspace /><RewardCampaignManager /></div>
           ) : adminTab === "targets" && userRole === "admin" ? (
             <TargetsManager orders={orders} settings={settings} />
           ) : adminTab === "targets" && userRole === "staff" ? (
@@ -3257,12 +3263,12 @@ function MarketingManager({
 
 function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertisement[] }) {
   return (
-    <div className="mb-4 overflow-hidden rounded-lg border border-[#d8dfd6] bg-[#fffdf9]" aria-label="الإعلانات المقبولة">
-      <div className="advertisement-strip flex w-max min-w-full items-center gap-3 p-2">
+    <div className="overflow-hidden" aria-label="الإعلانات المقبولة">
+      <div className="advertisement-strip flex w-max min-w-full items-center gap-3">
         {advertisements.map((advertisement) => {
           const content = (
-            <div className="grid h-[124px] w-[min(92vw,560px)] shrink-0 grid-cols-[176px_minmax(0,1fr)] items-center gap-4 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
-              {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="aspect-video w-[176px] rounded-md bg-[#eef0ea] object-cover" /> : advertisement.image_url ? <img src={advertisement.image_url} alt="" className="aspect-video w-[176px] rounded-md bg-[#eef0ea] object-cover" /> : <div className="grid aspect-video w-[176px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
+            <div className="grid h-[158px] w-[min(96vw,600px)] shrink-0 grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
+              {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="h-[138px] w-[190px] rounded-md bg-[#eef0ea] object-cover" /> : advertisement.image_url ? <img src={advertisement.image_url} alt="" className="h-[138px] w-[190px] rounded-md bg-[#eef0ea] object-cover" /> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
@@ -3280,29 +3286,278 @@ function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertis
   );
 }
 
-function FeaturedAdvertisement({ advertisement, onClose }: { advertisement: PublicAdvertisement; onClose: () => void }) {
+function FeaturedAdvertisement({ advertisement }: { advertisement: PublicAdvertisement }) {
   return (
-    <div className="fixed inset-0 z-[60] grid place-items-center bg-[#173f3acc] px-4" role="dialog" aria-modal="true" aria-label="إعلان مميز">
-      <div className="relative max-h-[94vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4 text-right shadow-2xl sm:p-5">
-        <button type="button" onClick={onClose} className="absolute left-3 top-3 grid size-9 place-items-center rounded-lg bg-[#eef0ea] text-xl text-[#596963]" aria-label="إغلاق الإعلان">×</button>
-        <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
-        <h2 className="mt-2 font-display text-2xl font-bold text-[#173f3a]">{advertisement.title}</h2>
-        {advertisement.reward_badge && <span className="mt-3 inline-flex min-h-9 items-center rounded-md bg-[#39704f] px-3.5 py-2 text-sm font-black text-white shadow-sm">{advertisement.reward_badge}</span>}
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-[#173f3acc] sm:p-5" role="dialog" aria-modal="true" aria-label="إعلان مميز">
+      <div className="relative max-h-[100dvh] w-full overflow-y-auto bg-[#fffdf9] text-right shadow-2xl sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-xl sm:rounded-lg">
+        <div className="px-4 pb-3 pt-4 sm:px-5">
+          <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <h2 className="min-w-0 font-display text-xl font-bold text-[#173f3a] sm:text-2xl">{advertisement.title}</h2>
+            {advertisement.reward_badge && <span className="shrink-0 text-xs font-black text-[#39704f] sm:text-sm">{advertisement.reward_badge}</span>}
+          </div>
+        </div>
         {advertisement.media_type === "video" && advertisement.video_url ? (
-          <div className="relative mx-auto mt-4 aspect-[9/16] max-h-[58vh] w-full max-w-[330px] overflow-hidden rounded-xl bg-black">
-            <video src={advertisement.video_url} muted autoPlay loop playsInline aria-hidden="true" className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-xl" />
-            <video src={advertisement.video_url} controls playsInline preload="metadata" className="relative z-10 size-full object-contain" />
-          </div>
+          <video src={advertisement.video_url} controls autoPlay loop muted playsInline preload="auto" className="max-h-[62dvh] w-full bg-black object-contain" />
         ) : advertisement.image_url && (
-          <div className="relative mx-auto mt-4 aspect-[9/16] max-h-[58vh] w-full max-w-[330px] overflow-hidden rounded-xl bg-[#18201e]">
-            <img src={advertisement.image_url} alt="" aria-hidden="true" className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-xl" />
-            <img src={advertisement.image_url} alt={advertisement.title} className="relative z-10 size-full object-contain" />
-          </div>
+          <img src={advertisement.image_url} alt={advertisement.title} className="max-h-[62dvh] w-full bg-[#18201e] object-contain" />
         )}
-        <p className="mt-3 leading-7 text-[#596963]">{advertisement.description}</p>
-        <Link href={`/ads/${advertisement.id}`} className="mt-4 inline-flex h-11 items-center rounded-xl bg-[#c48738] px-5 text-sm font-bold text-white">عرض ملف المعلن</Link>
+        <div className="px-4 py-4 sm:px-5">
+          <p className="line-clamp-3 text-sm leading-6 text-[#596963]">{advertisement.description}</p>
+          <Link href={`/ads/${advertisement.id}`} className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md bg-[#c48738] px-5 text-sm font-bold text-white sm:w-auto">عرض ملف المعلن</Link>
+        </div>
       </div>
     </div>
+  );
+}
+
+type AdminAdvertisement = PublicAdvertisement & {
+  status: string;
+  admin_note?: string | null;
+  payment_status: string;
+  featured: boolean;
+  price: number;
+  views?: number;
+  clicks?: number;
+  likes?: number;
+};
+
+type AdvertisementPackage = {
+  id: number;
+  name: string;
+  duration_days: number;
+  price: number;
+  active: boolean;
+};
+
+function AdminAdvertisementsWorkspace() {
+  const [advertisements, setAdvertisements] = useState<AdminAdvertisement[]>([]);
+  const [packages, setPackages] = useState<AdvertisementPackage[]>([]);
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("الكل");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [packageDraft, setPackageDraft] = useState({ name: "", duration_days: "7", price: "0" });
+
+  const load = async () => {
+    setLoading(true);
+    const response = await fetch("/api/admin/advertisements");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(result.error || "تعذر تحميل الإعلانات");
+      setLoading(false);
+      return;
+    }
+    setAdvertisements(result.advertisements || []);
+    setPackages(result.packages || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
+
+  const updateAdvertisement = async (advertisement: AdminAdvertisement, changes: Record<string, unknown>) => {
+    setMessage("");
+    const response = await fetch("/api/admin/advertisements", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: advertisement.id,
+        status: changes.status || advertisement.status,
+        payment_status: changes.payment_status || advertisement.payment_status,
+        featured: changes.featured ?? advertisement.featured,
+        admin_note: notes[advertisement.id] ?? advertisement.admin_note ?? "",
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحديث الإعلان");
+    setMessage("تم حفظ تعديلات الإعلان");
+    await load();
+  };
+
+  const removeEntity = async (entity: "advertisement" | "package", id: number) => {
+    if (!window.confirm(entity === "package" ? "حذف هذه الباقة؟" : "حذف الإعلان وكل بياناته؟")) return;
+    const response = await fetch("/api/admin/advertisements", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity, id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر الحذف");
+    setMessage(entity === "package" ? "تم حذف الباقة" : "تم حذف الإعلان");
+    await load();
+  };
+
+  const updatePackage = async (item: AdvertisementPackage, changes: Partial<AdvertisementPackage>) => {
+    const response = await fetch("/api/admin/advertisements", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entity: "package", id: item.id, ...changes }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تعديل الباقة");
+    setPackages((current) => current.map((entry) => entry.id === item.id ? { ...entry, ...result } : entry));
+  };
+
+  const addPackage = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const response = await fetch("/api/admin/advertisements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(packageDraft),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر إضافة الباقة");
+    setPackages((current) => [...current, result]);
+    setPackageDraft({ name: "", duration_days: "7", price: "0" });
+    setMessage("تمت إضافة الباقة");
+  };
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleAdvertisements = advertisements.filter((advertisement) => {
+    const matchesStatus = statusFilter === "الكل" || advertisement.status === statusFilter;
+    const matchesQuery = !normalizedQuery || `${advertisement.title} ${advertisement.advertiser_name}`.toLowerCase().includes(normalizedQuery);
+    return matchesStatus && matchesQuery;
+  });
+  const pendingCount = advertisements.filter((advertisement) => advertisement.status === "قيد المراجعة").length;
+  const activeCount = advertisements.filter((advertisement) => advertisement.status === "مقبول").length;
+  const paidCount = advertisements.filter((advertisement) => advertisement.payment_status === "تم الدفع").length;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#d9ded7] bg-[#fffdf9] shadow-[0_18px_45px_rgba(23,63,58,0.07)]">
+      <header className="border-b border-[#e4e8e1] bg-[linear-gradient(135deg,#173f3a_0%,#24564e_64%,#b97b30_160%)] px-4 py-5 text-white sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-bold text-[#e6bf7e]">إدارة الإعلانات</p>
+            <h2 className="mt-1 font-display text-2xl font-bold">المراجعة والتشغيل</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#d7e4df]">راجع المحتوى، أكد الدفع، تابع الأداء، واضبط النشر من مكان واحد.</p>
+          </div>
+          <button type="button" onClick={() => void load()} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/25 bg-white/10 px-4 text-sm font-bold text-white hover:bg-white/15">
+            <RefreshCw size={16} /> تحديث البيانات
+          </button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 border-b border-[#e4e8e1] bg-white sm:grid-cols-4">
+        {[
+          ["كل الإعلانات", advertisements.length],
+          ["بانتظار المراجعة", pendingCount],
+          ["منشورة", activeCount],
+          ["مدفوعة", paidCount],
+        ].map(([label, value], index) => (
+          <div key={String(label)} className={`px-4 py-4 ${index ? "border-r border-[#edf0eb]" : ""}`}>
+            <span className="text-xs font-bold text-[#7c8782]">{label}</span>
+            <strong className="mt-1 block font-display text-2xl text-[#173f3a]">{value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-4 sm:p-6">
+        <div className="mb-4 flex flex-col gap-3 border-b border-[#e7eae5] pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full lg:max-w-sm">
+            <Search className="absolute right-3 top-3 text-[#87918d]" size={17} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ابحث باسم الإعلان أو المعلن" className="h-11 w-full rounded-md border border-[#d9ded7] bg-white pr-10 pl-3 text-sm outline-none focus:border-[#39704f]" />
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {["الكل", "قيد المراجعة", "مقبول", "متوقف", "مرفوض", "منتهي"].map((status) => (
+              <button key={status} type="button" onClick={() => setStatusFilter(status)} className={`h-9 shrink-0 rounded-md px-3 text-xs font-bold ${statusFilter === status ? "bg-[#173f3a] text-white" : "border border-[#d9ded7] bg-white text-[#596963]"}`}>{status}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {visibleAdvertisements.map((advertisement) => (
+            <article key={advertisement.id} className="overflow-hidden rounded-lg border border-[#dfe4dc] bg-white">
+              <div className="grid lg:grid-cols-[190px_minmax(0,1fr)]">
+                <div className="min-h-44 bg-[#edf1ec]">
+                  {advertisement.media_type === "video" && advertisement.video_url ? (
+                    <video src={advertisement.video_url} controls playsInline preload="metadata" className="h-full max-h-60 w-full object-contain" />
+                  ) : advertisement.image_url ? (
+                    <img src={advertisement.image_url} alt={advertisement.title} className="h-full max-h-60 w-full object-contain" />
+                  ) : (
+                    <div className="grid h-full min-h-44 place-items-center text-xs font-bold text-[#87918d]">إعلان نصي</div>
+                  )}
+                </div>
+                <div className="p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-display text-lg font-bold text-[#173f3a]">{advertisement.title}</h3>
+                        {advertisement.featured && <span className="rounded-sm bg-[#fff1d7] px-2 py-1 text-[11px] font-bold text-[#9a651f]">مميز</span>}
+                      </div>
+                      <p className="mt-1 text-xs font-bold text-[#77827d]">{advertisement.advertiser_name} · إعلان #{advertisement.id}</p>
+                      <p className="mt-3 line-clamp-2 text-sm leading-6 text-[#596963]">{advertisement.description}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-sm px-2.5 py-1 text-xs font-bold ${advertisement.status === "مقبول" ? "bg-[#e8f4ec] text-[#39704f]" : advertisement.status === "قيد المراجعة" ? "bg-[#fff3dc] text-[#9a651f]" : "bg-[#f4e9e7] text-[#a9584d]"}`}>{advertisement.status}</span>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 divide-x divide-x-reverse divide-[#e6e9e4] rounded-md border border-[#e6e9e4] bg-[#f8faf7] py-3 text-center">
+                    <span><strong className="block text-base text-[#173f3a]">{advertisement.views || 0}</strong><small className="text-[#7c8782]">مشاهدة</small></span>
+                    <span><strong className="block text-base text-[#173f3a]">{advertisement.clicks || 0}</strong><small className="text-[#7c8782]">نقرة</small></span>
+                    <span><strong className="block text-base text-[#173f3a]">{advertisement.likes || 0}</strong><small className="text-[#7c8782]">إعجاب</small></span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[170px_170px_minmax(220px,1fr)]">
+                    <label className="grid gap-1 text-xs font-bold text-[#596963]">حالة الدفع
+                      <select value={advertisement.payment_status} onChange={(event) => void updateAdvertisement(advertisement, { payment_status: event.target.value })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 font-normal">
+                        <option>غير مطلوب</option><option>قيد الانتظار</option><option>تم الدفع</option><option>مرفوض</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs font-bold text-[#596963]">حالة الإعلان
+                      <select value={advertisement.status} onChange={(event) => void updateAdvertisement(advertisement, { status: event.target.value })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 font-normal">
+                        <option>قيد المراجعة</option><option>مقبول</option><option>متوقف</option><option>مرفوض</option><option>منتهي</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs font-bold text-[#596963]">ملاحظة للمعلن
+                      <input value={notes[advertisement.id] ?? advertisement.admin_note ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [advertisement.id]: event.target.value }))} onBlur={() => void updateAdvertisement(advertisement, {})} placeholder="سبب الرفض أو ملاحظة المراجعة" className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 font-normal outline-none focus:border-[#39704f]" />
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#edf0eb] pt-3">
+                    <button type="button" onClick={() => void updateAdvertisement(advertisement, { status: "مقبول" })} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#39704f] px-3 text-xs font-bold text-white"><CheckCircle2 size={15} /> اعتماد ونشر</button>
+                    <button type="button" onClick={() => void updateAdvertisement(advertisement, { featured: !advertisement.featured })} className="h-9 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">{advertisement.featured ? "إلغاء التمييز" : "تمييز الإعلان"}</button>
+                    <Link href={`/ads/${advertisement.id}`} target="_blank" className="h-9 rounded-md border border-[#c9d1ca] px-3 py-2 text-xs font-bold text-[#173f3a]">معاينة الإعلان</Link>
+                    <button type="button" onClick={() => void removeEntity("advertisement", advertisement.id)} className="mr-auto inline-flex size-9 items-center justify-center rounded-md border border-[#dfbbb5] text-[#a9584d]" aria-label="حذف الإعلان" title="حذف الإعلان"><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+          {!loading && !visibleAdvertisements.length && <p className="rounded-md border border-dashed border-[#ccd3cc] py-10 text-center text-sm text-[#7c8782]">لا توجد إعلانات مطابقة.</p>}
+          {loading && <p className="py-10 text-center text-sm text-[#7c8782]">جار تحميل الإعلانات...</p>}
+        </div>
+
+        <section className="mt-6 border-t border-[#dfe4dc] pt-6">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div><p className="text-xs font-bold text-[#b2762d]">التسعير والمدة</p><h3 className="font-display text-xl font-bold text-[#173f3a]">الباقات الإعلانية</h3></div>
+            <span className="text-xs text-[#7c8782]">{packages.length} باقة</span>
+          </div>
+          <div className="grid gap-2">
+            {packages.map((item) => (
+              <div key={item.id} className="grid gap-2 rounded-md border border-[#e1e5df] bg-[#f8faf7] p-3 sm:grid-cols-[minmax(180px,1fr)_100px_120px_100px_auto_auto]">
+                <input defaultValue={item.name} onBlur={(event) => void updatePackage(item, { name: event.target.value })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm" />
+                <input defaultValue={item.duration_days} type="number" min="1" onBlur={(event) => void updatePackage(item, { duration_days: Number(event.target.value) })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 text-sm" />
+                <input defaultValue={item.price} type="number" min="0" step="0.01" onBlur={(event) => void updatePackage(item, { price: Number(event.target.value) })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 text-sm" />
+                <span className="grid place-items-center text-xs font-bold text-[#596963]">{item.active ? "فعالة" : "متوقفة"}</span>
+                <button type="button" onClick={() => void updatePackage(item, { active: !item.active })} className="h-10 rounded-md bg-[#173f3a] px-3 text-xs font-bold text-white">{item.active ? "إيقاف" : "تشغيل"}</button>
+                <button type="button" onClick={() => void removeEntity("package", item.id)} className="grid size-10 place-items-center rounded-md border border-[#dfbbb5] text-[#a9584d]" aria-label="حذف الباقة" title="حذف الباقة"><Trash2 size={16} /></button>
+              </div>
+            ))}
+          </div>
+          <form onSubmit={addPackage} className="mt-3 grid gap-2 rounded-md border border-dashed border-[#bdc8be] p-3 sm:grid-cols-[minmax(180px,1fr)_100px_120px_auto]">
+            <input required value={packageDraft.name} onChange={(event) => setPackageDraft({ ...packageDraft, name: event.target.value })} placeholder="اسم الباقة الجديدة" className="h-10 rounded-md border border-[#d9ded7] px-3 text-sm" />
+            <input required type="number" min="1" value={packageDraft.duration_days} onChange={(event) => setPackageDraft({ ...packageDraft, duration_days: event.target.value })} placeholder="الأيام" className="h-10 rounded-md border border-[#d9ded7] px-2 text-sm" />
+            <input required type="number" min="0" step="0.01" value={packageDraft.price} onChange={(event) => setPackageDraft({ ...packageDraft, price: event.target.value })} placeholder="السعر" className="h-10 rounded-md border border-[#d9ded7] px-2 text-sm" />
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-[#b2762d] px-4 text-sm font-bold text-white"><Plus size={16} /> إضافة باقة</button>
+          </form>
+        </section>
+
+        {message && <p className="mt-4 rounded-md bg-[#eef5ef] px-3 py-2 text-center text-sm font-bold text-[#39704f]">{message}</p>}
+      </div>
+    </section>
   );
 }
 
