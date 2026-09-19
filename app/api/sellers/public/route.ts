@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const user = await getMarketUser(request);
   if (!user) return NextResponse.json({ error: "سجل الدخول أولًا لحفظ العرض ومتابعة حالته" }, { status: 401 });
+  if (user.account_type !== "market") return NextResponse.json({ error: "حسابات المستخدمين العادية لا تنشئ عروض بيع" }, { status: 403 });
   const form = await request.formData();
   const sellerName = String(form.get("seller_name") || "").trim().slice(0, 100);
   const phone = digits(String(form.get("phone") || "")).slice(0, 15);

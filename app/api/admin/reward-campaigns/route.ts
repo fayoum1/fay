@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAdminRole } from "@/lib/admin-auth";
+import { settleExpiredRewardCampaigns, settleRewardCampaign } from "@/lib/reward-settlement";
+import { getRewardCampaignStats } from "@/lib/reward-campaign-stats";
 
 function database() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,36 +18,28 @@ export async function GET(request: NextRequest) {
   if (await getAdminRole(request) !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  try {
+    await settleExpiredRewardCampaigns(client);
+  } catch (reason) {
+    return NextResponse.json({ error: reason instanceof Error ? reason.message : "تعذر تسوية الحملات المنتهية" }, { status: 500 });
+  }
   const [{ data: campaigns, error }, { data: advertisements, error: adsError }] = await Promise.all([
     client.from("ad_reward_campaigns").select("*, advertisements(id,title)").order("created_at", { ascending: false }),
     client.from("advertisements").select("id,title").order("created_at", { ascending: false }),
   ]);
   if (error || adsError) return NextResponse.json({ error: error?.message || adsError?.message }, { status: 500 });
-  return NextResponse.json({ campaigns: campaigns || [], advertisements: advertisements || [] });
-}
-
-export async function POST(request: NextRequest) {
-  if (await getAdminRole(request) !== "admin") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const body = await request.json().catch(() => ({}));
-  const advertisementId = Number(body.advertisement_id);
-  const name = String(body.name || "").trim().slice(0, 100);
-  const rewardMode = String(body.reward_mode || "points");
-  const budget = Number(body.budget);
-  const maxRecipients = body.max_recipients === "" || body.max_recipients == null ? null : Number(body.max_recipients);
-  const perUserLimit = Number(body.per_user_limit || 1);
-  const actionType = String(body.action_type || "referral");
-  const rewardPoints = Number(body.reward_points || 0);
-  const rewardAmount = Number(body.reward_amount || 0);
-  if (!Number.isInteger(advertisementId) || !name || !rewardModes.includes(rewardMode) || !Number.isFinite(budget) || budget < 0 || (maxRecipients !== null && (!Number.isInteger(maxRecipients) || maxRecipients < 1)) || !Number.isInteger(perUserLimit) || perUserLimit < 1 || !actionTypes.includes(actionType) || !Number.isInteger(rewardPoints) || rewardPoints < 0 || !Number.isFinite(rewardAmount) || rewardAmount < 0) {
-    return NextResponse.json({ error: "بيانات الحملة غير صحيحة" }, { status: 400 });
+  try {
+    const campaignStats = await getRewardCampaignStats(client, (campaigns || []).map((campaign) => campaign.id));
+    return NextResponse.json({
+      campaigns: (campaigns || []).map((campaign) => ({
+        ...campaign,
+        stats: campaignStats.get(campaign.id),
+      })),
+      advertisements: advertisements || [],
+    });
+  } catch (reason) {
+    return NextResponse.json({ error: reason instanceof Error ? reason.message : "تعذر حساب إحصاءات الحملات" }, { status: 500 });
   }
-  const client = database();
-  if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
-  const { data, error } = await client.from("ad_reward_campaigns").insert({ advertisement_id: advertisementId, name, reward_mode: rewardMode, budget, max_recipients: maxRecipients, per_user_limit: perUserLimit, status: "draft" }).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-  const { error: actionError } = await client.from("ad_reward_actions").insert({ campaign_id: data.id, action_type: actionType, reward_points: rewardPoints, reward_amount: rewardAmount, reward_label: String(body.reward_label || "").trim().slice(0, 120) || null, required_seconds: actionType === "view" ? Math.max(1, Number(body.required_seconds) || 30) : null, enabled: true });
-  if (actionError) return NextResponse.json({ error: actionError.message }, { status: 400 });
-  return NextResponse.json(data, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -64,6 +58,13 @@ export async function PATCH(request: NextRequest) {
   if (!Object.keys(update).length) return NextResponse.json({ error: "لا توجد تعديلات" }, { status: 400 });
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
+  if (["completed", "closed"].includes(body.status)) {
+    try {
+      await settleRewardCampaign(client, id);
+    } catch (reason) {
+      return NextResponse.json({ error: reason instanceof Error ? reason.message : "تعذر تقسيم ميزانية الحملة" }, { status: 400 });
+    }
+  }
   const { data, error } = await client.from("ad_reward_campaigns").update(update).eq("id", id).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data);

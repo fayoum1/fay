@@ -25,7 +25,17 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "الإعلان غير متاح" }, { status: 404 });
   const { count: likes } = await client.from("advertisement_engagements").select("id", { count: "exact", head: true }).eq("advertisement_id", id).eq("event_type", "like");
-  const { data: viewAction } = await client.from("ad_reward_campaigns").select("id,ad_reward_actions(required_seconds)").eq("advertisement_id", id).eq("status", "active").eq("ad_reward_actions.action_type", "view").maybeSingle();
+  const { data: advertiserProfile } = await client.from("market_users").select("id,display_name,phone,role,account_type,profile_image_url,referral_code").eq("phone", data.phone).eq("account_type", "market").maybeSingle();
+  const { data: rewardCampaign } = await client
+    .from("ad_reward_campaigns")
+    .select("id,reward_mode,budget,max_recipients,per_user_limit,ad_reward_actions(id,action_type,reward_amount,required_seconds,max_rewards,enabled)")
+    .eq("advertisement_id", id)
+    .eq("status", "active")
+    .or(`starts_at.is.null,starts_at.lte.${now}`)
+    .or(`ends_at.is.null,ends_at.gte.${now}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const { data: otherAds } = await client
     .from("advertisements")
     .select("id,advertiser_name,title,description,media_type,image_url,video_url,target_url,whatsapp")
@@ -36,6 +46,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .or(`starts_at.is.null,starts_at.lte.${now}`)
     .or(`ends_at.is.null,ends_at.gte.${now}`)
     .order("created_at", { ascending: false });
-  const watchRequiredSeconds = Number(viewAction?.ad_reward_actions?.[0]?.required_seconds || 0);
-  return NextResponse.json({ ...data, likes: likes || 0, watch_required_seconds: watchRequiredSeconds || null, other_ads: otherAds || [] });
+  const rewardActions = (rewardCampaign?.ad_reward_actions || []).filter((action) => action.enabled);
+  const viewAction = rewardActions.find((action) => action.action_type === "view");
+  const watchRequiredSeconds = Number(viewAction?.required_seconds || 0);
+  const publicRewardCampaign = rewardCampaign ? {
+    reward_mode: rewardCampaign.reward_mode,
+    max_recipients: rewardCampaign.max_recipients,
+    per_user_limit: rewardCampaign.per_user_limit,
+    payout_mode: rewardCampaign.reward_mode === "cash" && rewardActions.some((action) => Number(action.reward_amount) === 0) ? "pool" : "fixed",
+    actions: rewardActions.map((action) => ({ action_type: action.action_type, required_seconds: action.required_seconds, max_rewards: action.max_rewards })),
+  } : null;
+  return NextResponse.json({ ...data, advertiser_profile: advertiserProfile || null, likes: likes || 0, reward_campaign: publicRewardCampaign, watch_required_seconds: watchRequiredSeconds || null, other_ads: otherAds || [] });
 }

@@ -10,7 +10,7 @@ function database() {
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getMarketUser(request);
-  if (!user) return NextResponse.json({ counted: false, reason: "login_required" }, { status: 401 });
+  if (user?.account_type !== "ordinary") return NextResponse.json({ counted: false, reason: "rewards_account_required", error: "يجب إنشاء حساب مكافآت حتى تستفيد من التفاعل وجني الأرباح." }, { status: 401 });
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const advertisementId = Number((await params).id);

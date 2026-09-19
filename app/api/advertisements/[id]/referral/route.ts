@@ -21,6 +21,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!campaign) return NextResponse.json({ counted: false, reason: "no_active_campaign" });
   const { data: referrer } = await client.from("market_users").select("id").eq("referral_code", referralCode).eq("active", true).maybeSingle();
   if (!referrer) return NextResponse.json({ counted: false, reason: "unknown_referrer" });
+  const referredUser = await getMarketUser(request);
+  if (referredUser?.id === referrer.id) return NextResponse.json({ counted: false, reward: false, reason: "self_referral" });
   const { data: existing } = await client.from("ad_referrals").select("id,landing_count").eq("campaign_id", campaign.id).eq("referrer_id", referrer.id).eq("visitor_key", visitorKey).maybeSingle();
   if (existing) {
     await client.from("ad_referrals").update({ landing_count: Number(existing.landing_count || 1) + 1 }).eq("id", existing.id);
@@ -41,8 +43,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const amount = Number(action.reward_amount || 0);
   const budgetReached = Number(campaignData?.budget || 0) > 0 && spent + amount > Number(campaignData?.budget || 0);
   if (maxReached || campaignMaxReached || userLimitReached || budgetReached) return NextResponse.json({ counted: true, reward: false, reason: "limit_reached" });
-  const referredUser = await getMarketUser(request);
-  if (referredUser?.id === referrer.id) return NextResponse.json({ counted: true, reward: false, reason: "self_referral" });
   const { error: rewardError } = await client.from("ad_reward_ledger").insert({ user_id: referrer.id, campaign_id: campaign.id, action_id: action.id, referral_id: referral.id, status: "pending", points: Number(action.reward_points || 0), amount, reason: "إحالة زائر جديد من رابط المشاركة", action_key: `referral:${campaign.id}:${referrer.id}:${visitorKey}` });
   if (rewardError && rewardError.code !== "23505") return NextResponse.json({ error: rewardError.message }, { status: 400 });
   return NextResponse.json({ counted: true, reward: !rewardError });

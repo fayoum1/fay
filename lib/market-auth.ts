@@ -41,7 +41,7 @@ async function ensureReferralCode(client: ReturnType<typeof database>, user: { i
 export async function authenticateMarketUser(phone: string, password: string) {
   const client = database();
   if (!client) return null;
-  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,receive_offers,referral_code").eq("phone", phone).eq("active", true).maybeSingle();
+  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,account_type,receive_offers,referral_code,profile_image_url,wallet_number").eq("phone", phone).eq("active", true).maybeSingle();
   if (!data || !verifyMarketPassword(password, data.password_hash)) return null;
   data.referral_code = await ensureReferralCode(client, data);
   return { ...data, token: tokenForUser(data.id, data.password_hash) };
@@ -55,7 +55,7 @@ export async function getMarketUser(request: NextRequest) {
   if (!Number.isInteger(id) || !signature) return null;
   const client = database();
   if (!client) return null;
-  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,receive_offers,referral_code").eq("id", id).eq("active", true).maybeSingle();
+  const { data } = await client.from("market_users").select("id,display_name,phone,password_hash,role,account_type,receive_offers,referral_code,profile_image_url,wallet_number").eq("id", id).eq("active", true).maybeSingle();
   if (!data || signature !== createHmac("sha256", data.password_hash).update("market-session").digest("hex")) return null;
   data.referral_code = await ensureReferralCode(client, data);
   return data;

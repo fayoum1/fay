@@ -100,6 +100,7 @@ type PublicAdvertisement = {
   target_url?: string | null;
   whatsapp?: string | null;
   featured?: boolean;
+  reward_badge?: string | null;
 };
 type MarketTrader = { id: number; display_name: string; phone: string; receive_offers: boolean };
 const orderStatuses: OrderStatus[] = [
@@ -327,11 +328,14 @@ export default function Home() {
   const [featuredAdvertisement, setFeaturedAdvertisement] = useState<PublicAdvertisement | null>(null);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("rashefa_staff_name");
-    if (saved) {
-      setStaffName(saved);
-      setStaffNameInput(saved);
-    }
+    const restoreStaffName = window.setTimeout(() => {
+      const saved = window.localStorage.getItem("rashefa_staff_name");
+      if (saved) {
+        setStaffName(saved);
+        setStaffNameInput(saved);
+      }
+    }, 0);
+    return () => window.clearTimeout(restoreStaffName);
   }, []);
 
   useEffect(() => {
@@ -473,15 +477,21 @@ export default function Home() {
   }, [milestoneMessage]);
 
   useEffect(() => {
-    if (userRole !== "staff" || !staffName) return setPenaltyMessage("");
-    const windows = computeViolationWindows(orders.filter((order) => order.staff_name?.trim() === staffName));
-    const now = new Date();
-    const active = windows.find((window) => now >= window.start && now <= window.end);
-    setPenaltyMessage(
-      active
-        ? `⚠️ لقد قمت بتغيير الحالة إلى "تم" لطلبات لم تُستلم من قبل العميل، لذا تم إيقافك عن تحقيق ربح التارجيت لمدة 24 ساعة حتى ${active.end.toLocaleString("ar-EG")}. يمكنك تغيير الحالة بشكل طبيعي لكن لن تُحتسب لك ضمن التارجيت خلال هذه المدة.`
-        : "",
-    );
+    const updatePenalty = window.setTimeout(() => {
+      if (userRole !== "staff" || !staffName) {
+        setPenaltyMessage("");
+        return;
+      }
+      const windows = computeViolationWindows(orders.filter((order) => order.staff_name?.trim() === staffName));
+      const now = new Date();
+      const active = windows.find((window) => now >= window.start && now <= window.end);
+      setPenaltyMessage(
+        active
+          ? `⚠️ لقد قمت بتغيير الحالة إلى "تم" لطلبات لم تُستلم من قبل العميل، لذا تم إيقافك عن تحقيق ربح التارجيت لمدة 24 ساعة حتى ${active.end.toLocaleString("ar-EG")}. يمكنك تغيير الحالة بشكل طبيعي لكن لن تُحتسب لك ضمن التارجيت خلال هذه المدة.`
+          : "",
+      );
+    }, 0);
+    return () => window.clearTimeout(updatePenalty);
   }, [orders, userRole, staffName]);
 
 
@@ -3249,14 +3259,21 @@ function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertis
   return (
     <div className="mb-4 overflow-hidden rounded-lg border border-[#d8dfd6] bg-[#fffdf9]" aria-label="الإعلانات المقبولة">
       <div className="advertisement-strip flex w-max min-w-full items-center gap-3 p-2">
-        {[...advertisements, ...advertisements].map((advertisement, index) => {
+        {advertisements.map((advertisement) => {
           const content = (
             <div className="grid h-[124px] w-[min(92vw,560px)] shrink-0 grid-cols-[176px_minmax(0,1fr)] items-center gap-4 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
               {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="aspect-video w-[176px] rounded-md bg-[#eef0ea] object-cover" /> : advertisement.image_url ? <img src={advertisement.image_url} alt="" className="aspect-video w-[176px] rounded-md bg-[#eef0ea] object-cover" /> : <div className="grid aspect-video w-[176px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
-              <div className="min-w-0 space-y-1"><p className="text-[10px] font-bold text-[#a66c20]">إعلان ممول</p><p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p><p className="line-clamp-3 text-xs leading-5 text-[#596963]">{advertisement.description}</p></div>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
+                  {advertisement.reward_badge && <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-xs font-black text-white shadow-sm">{advertisement.reward_badge}</span>}
+                </div>
+                <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
+                <p className="line-clamp-3 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
+              </div>
             </div>
           );
-          return <Link key={`${advertisement.id}-${index}`} href={`/ads/${advertisement.id}`}>{content}</Link>;
+          return <Link key={advertisement.id} href={`/ads/${advertisement.id}`}>{content}</Link>;
         })}
       </div>
     </div>
@@ -3266,11 +3283,22 @@ function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertis
 function FeaturedAdvertisement({ advertisement, onClose }: { advertisement: PublicAdvertisement; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center bg-[#173f3acc] px-4" role="dialog" aria-modal="true" aria-label="إعلان مميز">
-      <div className="relative w-full max-w-lg rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5 text-right shadow-2xl">
+      <div className="relative max-h-[94vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4 text-right shadow-2xl sm:p-5">
         <button type="button" onClick={onClose} className="absolute left-3 top-3 grid size-9 place-items-center rounded-lg bg-[#eef0ea] text-xl text-[#596963]" aria-label="إغلاق الإعلان">×</button>
         <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
         <h2 className="mt-2 font-display text-2xl font-bold text-[#173f3a]">{advertisement.title}</h2>
-        {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} controls playsInline className="mt-4 max-h-64 w-full rounded-xl object-cover" /> : advertisement.image_url && <img src={advertisement.image_url} alt="" className="mt-4 max-h-64 w-full rounded-xl object-cover" />}
+        {advertisement.reward_badge && <span className="mt-3 inline-flex min-h-9 items-center rounded-md bg-[#39704f] px-3.5 py-2 text-sm font-black text-white shadow-sm">{advertisement.reward_badge}</span>}
+        {advertisement.media_type === "video" && advertisement.video_url ? (
+          <div className="relative mx-auto mt-4 aspect-[9/16] max-h-[58vh] w-full max-w-[330px] overflow-hidden rounded-xl bg-black">
+            <video src={advertisement.video_url} muted autoPlay loop playsInline aria-hidden="true" className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-xl" />
+            <video src={advertisement.video_url} controls playsInline preload="metadata" className="relative z-10 size-full object-contain" />
+          </div>
+        ) : advertisement.image_url && (
+          <div className="relative mx-auto mt-4 aspect-[9/16] max-h-[58vh] w-full max-w-[330px] overflow-hidden rounded-xl bg-[#18201e]">
+            <img src={advertisement.image_url} alt="" aria-hidden="true" className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-xl" />
+            <img src={advertisement.image_url} alt={advertisement.title} className="relative z-10 size-full object-contain" />
+          </div>
+        )}
         <p className="mt-3 leading-7 text-[#596963]">{advertisement.description}</p>
         <Link href={`/ads/${advertisement.id}`} className="mt-4 inline-flex h-11 items-center rounded-xl bg-[#c48738] px-5 text-sm font-bold text-white">عرض ملف المعلن</Link>
       </div>
@@ -3291,7 +3319,10 @@ function AdvertisementsManager() {
     if (!response.ok) return setMessage(result.error || "تعذر تحميل الإعلانات");
     setAdvertisements(result.advertisements || []); setPackages(result.packages || []);
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
 
   const update = async (id: number, status: string, featured = false, payment_status?: string) => {
     const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status, featured, payment_status, admin_note: note[id] || "" }) });
@@ -3343,7 +3374,10 @@ function AdvertisementOperations() {
     if (!response.ok) return setMessage(result.error || "تعذر تحميل أدوات التحكم");
     setItems(result.advertisements || []); setPackages(result.packages || []);
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
 
   const patch = async (body: Record<string, unknown>) => {
     const response = await fetch("/api/admin/advertisements", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -3370,12 +3404,26 @@ function AdvertisementOperations() {
   );
 }
 
+type RewardCampaignStats = {
+  audience_count: number;
+  audience_interaction_count: number;
+  interaction_count: number;
+  participant_count: number;
+  pending_amount: number;
+  approved_amount: number;
+  pending_points: number;
+  approved_points: number;
+  current_entitlement: number;
+  estimated_share: number | null;
+};
+
 function RewardCampaignManager() {
-  const [campaigns, setCampaigns] = useState<Array<{ id: number; advertisement_id: number; name: string; reward_mode: string; budget: number; max_recipients: number | null; per_user_limit: number; status: string; advertisements?: { title?: string } }>>([]);
+  const [campaigns, setCampaigns] = useState<Array<{ id: number; advertisement_id: number; name: string; reward_mode: string; budget: number; max_recipients: number | null; per_user_limit: number; status: string; advertisements?: { title?: string }; stats?: RewardCampaignStats }>>([]);
   const [advertisements, setAdvertisements] = useState<Array<{ id: number; title: string }>>([]);
   const [draft, setDraft] = useState({ advertisement_id: "", name: "", reward_mode: "points", budget: "0", max_recipients: "", per_user_limit: "1", action_type: "referral", reward_points: "1", reward_amount: "0", required_seconds: "" });
   const [message, setMessage] = useState("");
   const [rewards, setRewards] = useState<Array<{ id: number; status: string; points: number; amount: number; reason?: string | null; created_at: string; market_users?: { display_name?: string; phone?: string }; ad_reward_campaigns?: { name?: string } }>>([]);
+  const [withdrawals, setWithdrawals] = useState<Array<{ id: number; amount: number; wallet_number: string; status: string; created_at: string; market_users?: { display_name?: string; phone?: string } }>>([]);
 
   const load = async () => {
     const response = await fetch("/api/admin/reward-campaigns");
@@ -3385,8 +3433,14 @@ function RewardCampaignManager() {
     const rewardResponse = await fetch("/api/admin/reward-ledger");
     const rewardResult = await rewardResponse.json().catch(() => ({}));
     if (rewardResponse.ok) setRewards(rewardResult.rewards || []);
+    const withdrawalResponse = await fetch("/api/admin/withdrawals");
+    const withdrawalResult = await withdrawalResponse.json().catch(() => ({}));
+    if (withdrawalResponse.ok) setWithdrawals(withdrawalResult.withdrawals || []);
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
 
   const createCampaign = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -3408,12 +3462,20 @@ function RewardCampaignManager() {
     await load();
   };
 
+  const changeWithdrawalStatus = async (id: number, status: string) => {
+    const response = await fetch("/api/admin/withdrawals", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحديث طلب السحب");
+    await load();
+  };
+
   return (
-    <section className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
-      <div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">النقاط والخصومات والهدايا</p><h2 className="font-display text-xl font-bold text-[#173f3a]">حملات المكافآت</h2><p className="mt-1 text-xs leading-5 text-[#72807a]">الحملة تبدأ كمسودة، ولا تمنح أي رصيد قبل تفعيلها ومراجعة المكافآت.</p></div>
+    <section className="reward-campaign-manager rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
+      <div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">مراجعة حملات المعلنين</p><h2 className="font-display text-xl font-bold text-[#173f3a]">حملات المكافآت</h2><p className="mt-1 text-xs leading-5 text-[#72807a]">ينشئ المعلن حملته مع إعلانه، ودور الإدارة مراجعتها وتفعيلها أو إيقافها فقط.</p></div>
       <form onSubmit={createCampaign} className="grid gap-2 rounded-xl bg-[#f7faf6] p-3 sm:grid-cols-[1fr_1.2fr_120px_120px_120px_120px_120px_120px_auto]"><select required value={draft.advertisement_id} onChange={(event) => setDraft({ ...draft, advertisement_id: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="">اختر الإعلان</option>{advertisements.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="اسم الحملة" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><select value={draft.reward_mode} onChange={(event) => setDraft({ ...draft, reward_mode: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="points">نقاط</option><option value="discount">خصم</option><option value="gift">هدية</option><option value="cash">نقدي معلق</option></select><select value={draft.action_type} onChange={(event) => setDraft({ ...draft, action_type: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="referral">إحالة</option><option value="view">مشاهدة</option><option value="like">إعجاب</option><option value="share">مشاركة</option></select><input required type="number" min="0" value={draft.reward_points} onChange={(event) => setDraft({ ...draft, reward_points: event.target.value })} placeholder="النقاط" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input required type="number" min="0" step="0.01" value={draft.reward_amount} onChange={(event) => setDraft({ ...draft, reward_amount: event.target.value })} placeholder="المبلغ" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input required type="number" min="0" step="1" value={draft.budget} onChange={(event) => setDraft({ ...draft, budget: event.target.value })} placeholder="الميزانية" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input type="number" min="1" value={draft.max_recipients} onChange={(event) => setDraft({ ...draft, max_recipients: event.target.value })} placeholder="عدد المستفيدين" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><button className="h-10 rounded-lg bg-[#173f3a] px-3 text-xs font-bold text-white">إنشاء</button></form>
-      <div className="mt-4 grid gap-2">{campaigns.map((campaign) => <div key={campaign.id} className="grid gap-2 rounded-xl border border-[#e7e7df] bg-white p-3 sm:grid-cols-[1fr_110px_110px_150px_auto]"><div><p className="text-sm font-bold text-[#173f3a]">{campaign.name}</p><p className="text-xs text-[#72807a]">{campaign.advertisements?.title || `إعلان #${campaign.advertisement_id}`} | ميزانية {campaign.budget}</p></div><span className="grid place-items-center text-xs font-bold text-[#c48738]">{campaign.reward_mode}</span><span className="grid place-items-center text-xs font-bold text-[#596963]">{campaign.status}</span><span className="grid place-items-center text-xs text-[#72807a]">حد المستفيدين: {campaign.max_recipients || "مفتوح"}</span><select value={campaign.status} onChange={(event) => void changeStatus(campaign.id, event.target.value)} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option value="draft">مسودة</option><option value="active">تفعيل</option><option value="paused">إيقاف مؤقت</option><option value="completed">مكتملة</option><option value="closed">إغلاق</option></select></div>)}{!campaigns.length && <p className="py-6 text-center text-sm text-[#89918c]">لا توجد حملات مكافآت.</p>}</div>
+      <div className="mt-4 grid gap-2">{campaigns.map((campaign) => <div key={campaign.id} className="rounded-xl border border-[#e7e7df] bg-white p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_110px_150px_auto]"><div><p className="text-sm font-bold text-[#173f3a]">{campaign.name}</p><p className="text-xs text-[#72807a]">{campaign.advertisements?.title || `إعلان #${campaign.advertisement_id}`} | ميزانية {campaign.budget}</p></div><span className="grid place-items-center text-xs font-bold text-[#c48738]">{campaign.reward_mode}</span><span className="grid place-items-center text-xs font-bold text-[#596963]">{campaign.status}</span><span className="grid place-items-center text-xs text-[#72807a]">حد المستفيدين: {campaign.max_recipients || "مفتوح"}</span><select value={campaign.status} onChange={(event) => void changeStatus(campaign.id, event.target.value)} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option value="draft">مسودة</option><option value="active">تفعيل</option><option value="paused">إيقاف مؤقت</option><option value="completed">مكتملة</option><option value="closed">إغلاق</option></select></div>{campaign.stats && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#eef0ea] pt-3 text-center text-xs sm:grid-cols-3 lg:grid-cols-6"><span><strong className="block text-[#173f3a]">{campaign.stats.participant_count}</strong><span className="text-[#72807a]">الأشخاص</span></span><span><strong className="block text-[#173f3a]">{campaign.stats.interaction_count}</strong><span className="text-[#72807a]">تفاعل مؤهل</span></span><span><strong className="block text-[#c48738]">{campaign.stats.current_entitlement} جنيه</strong><span className="text-[#72807a]">المستحق الحالي</span></span><span><strong className="block text-[#596963]">{campaign.stats.pending_amount} جنيه / {campaign.stats.pending_points} نقطة</strong><span className="text-[#72807a]">معلّق</span></span><span><strong className="block text-[#39704f]">{campaign.stats.approved_amount} جنيه / {campaign.stats.approved_points} نقطة</strong><span className="text-[#72807a]">معتمد</span></span>{campaign.stats.estimated_share !== null && <span><strong className="block text-[#a9584d]">{campaign.stats.estimated_share} جنيه</strong><span className="text-[#72807a]">النصيب التقديري للتفاعل</span></span>}</div>}</div>)}{!campaigns.length && <p className="py-6 text-center text-sm text-[#89918c]">لا توجد حملات مكافآت.</p>}</div>
       <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3"><h3 className="font-bold text-[#173f3a]">المكافآت المعلقة</h3><div className="mt-2 grid gap-2">{rewards.filter((reward) => reward.status === "pending").map((reward) => <div key={reward.id} className="grid gap-2 rounded-lg bg-white p-3 text-xs sm:grid-cols-[1fr_100px_100px_auto_auto]"><div><strong>{reward.market_users?.display_name || "مستخدم"}</strong><span className="mr-2 text-[#72807a]">{reward.market_users?.phone || ""}</span><p className="mt-1 text-[#72807a]">{reward.reason || "مكافأة حملة"}</p></div><span className="grid place-items-center font-bold">{reward.points} نقطة</span><span className="grid place-items-center font-bold text-[#c48738]">{reward.amount} جنيه</span><button onClick={() => void changeRewardStatus(reward.id, "approved")} className="h-9 rounded-lg bg-[#39704f] px-3 font-bold text-white">اعتماد</button><button onClick={() => void changeRewardStatus(reward.id, "rejected")} className="h-9 rounded-lg bg-[#a9584d] px-3 font-bold text-white">رفض</button></div>)}{!rewards.some((reward) => reward.status === "pending") && <p className="py-4 text-center text-xs text-[#89918c]">لا توجد مكافآت معلقة.</p>}</div></div>
+      <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3"><h3 className="font-bold text-[#173f3a]">طلبات سحب الأرباح</h3><div className="mt-2 grid gap-2">{withdrawals.map((withdrawal) => <div key={withdrawal.id} className="grid gap-2 rounded-lg bg-white p-3 text-xs sm:grid-cols-[1fr_110px_130px_110px_auto]"><div><strong>{withdrawal.market_users?.display_name || "مستخدم"}</strong><span className="mr-2 text-[#72807a]">{withdrawal.market_users?.phone || ""}</span><p className="mt-1 text-[#72807a]">{new Date(withdrawal.created_at).toLocaleString("ar-EG")}</p></div><span className="grid place-items-center font-bold text-[#c48738]">{withdrawal.amount} جنيه</span><span className="grid place-items-center font-bold">{withdrawal.wallet_number}</span><span className="grid place-items-center font-bold text-[#596963]">{withdrawal.status === "pending" ? "قيد المراجعة" : withdrawal.status === "approved" ? "معتمد" : withdrawal.status === "paid" ? "تم الإرسال" : "مرفوض"}</span><div className="flex gap-1">{withdrawal.status === "pending" && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "approved")} className="h-9 rounded-lg bg-[#39704f] px-3 font-bold text-white">اعتماد</button>}{withdrawal.status === "approved" && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "paid")} className="h-9 rounded-lg bg-[#173f3a] px-3 font-bold text-white">تم الإرسال</button>}{["pending", "approved"].includes(withdrawal.status) && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "rejected")} className="h-9 rounded-lg bg-[#a9584d] px-3 font-bold text-white">رفض</button>}</div></div>)}{!withdrawals.length && <p className="py-4 text-center text-xs text-[#89918c]">لا توجد طلبات سحب.</p>}</div></div>
       {message && <p className="mt-3 text-center text-sm font-bold text-[#a9584d]">{message}</p>}
     </section>
   );
@@ -3436,7 +3498,10 @@ function SellersManager() {
     setStats(result.stats || { visitor_count: 0, submission_count: 0 });
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
 
   const updateStatus = async (id: number, status: SellerOffer["status"]) => {
     const response = await fetch("/api/admin/sellers", {
@@ -3590,7 +3655,7 @@ function SettingsManager({
           />
         </label>
         <label className="text-sm font-semibold">
-          كل كام حالة "تم" يستحق الموظف مكافأة
+          كل كام حالة &quot;تم&quot; يستحق الموظف مكافأة
           <input
             type="number"
             min="1"

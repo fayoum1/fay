@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAdminRole } from "@/lib/admin-auth";
+import { settleRewardCampaign } from "@/lib/reward-settlement";
 
 function database() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -69,6 +70,23 @@ export async function PATCH(request: NextRequest) {
   }
   const { error } = await client.from("advertisements").update(update).eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (status === "مقبول") {
+    const { error: campaignError } = await client.from("ad_reward_campaigns").update({ status: "active", starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString() }).eq("advertisement_id", id).eq("status", "draft");
+    if (campaignError) return NextResponse.json({ error: campaignError.message }, { status: 400 });
+  } else if (status === "منتهي") {
+    const { data: campaigns, error: campaignsError } = await client.from("ad_reward_campaigns").select("id").eq("advertisement_id", id).eq("status", "active");
+    if (campaignsError) return NextResponse.json({ error: campaignsError.message }, { status: 400 });
+    try {
+      for (const campaign of campaigns || []) await settleRewardCampaign(client, campaign.id);
+    } catch (reason) {
+      return NextResponse.json({ error: reason instanceof Error ? reason.message : "تعذر تقسيم ميزانية الحملة" }, { status: 400 });
+    }
+    const { error: campaignError } = await client.from("ad_reward_campaigns").update({ status: "completed" }).eq("advertisement_id", id).eq("status", "active");
+    if (campaignError) return NextResponse.json({ error: campaignError.message }, { status: 400 });
+  } else if (["مرفوض", "متوقف"].includes(status)) {
+    const { error: campaignError } = await client.from("ad_reward_campaigns").update({ status: "paused" }).eq("advertisement_id", id).eq("status", "active");
+    if (campaignError) return NextResponse.json({ error: campaignError.message }, { status: 400 });
+  }
   return NextResponse.json({ success: true });
 }
 
