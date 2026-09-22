@@ -257,31 +257,18 @@ function AdvertisementExpiryMeta({ advertisement, compact = false }: { advertise
 
   if (compact) {
     return (
-      <div
-        className="mt-2 rounded-2xl border border-[#d9c8a4] bg-gradient-to-br from-[#fffdf8] via-[#fffaf0] to-[#f7f1e5] p-2 shadow-[0_6px_18px_rgba(17,17,17,0.08)]"
-        style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}
-      >
-        <div className="flex items-center justify-between gap-2 rounded-xl bg-[#f5efe3] px-2 py-1.5 ring-1 ring-[#d9c8a4]">
-          <span className="text-[10px] font-black leading-5 tracking-[0.02em] text-[#0f172a]">متبقي حتى انتهاء الإعلان</span>
-          <span className="tabular-nums text-[10px] font-black leading-5 text-[#0f172a]">{remainingLabel}</span>
-        </div>
-        <div className="mt-1.5 text-[9px] font-extrabold leading-5 text-[#111827]">تاريخ انتهاء الإعلان: {expiryLabel}</div>
-        <div className="mt-0.5 text-[9px] font-extrabold leading-5 text-[#111827]">انتهاء السحب: {expiryLabel}</div>
+      <div className="mt-2 flex items-center justify-center rounded-lg bg-[#f5efe3] px-2 py-1 text-[10px] font-black text-[#111827]" style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}>
+        <span className="tabular-nums text-[#111827]">{remainingLabel}</span>
       </div>
     );
   }
 
   return (
-    <div
-      className="mt-3 rounded-[20px] border border-[#d9c8a4] bg-gradient-to-br from-[#fffdf8] via-[#fffaf0] to-[#f5efe3] p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
-      style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}
-    >
-      <div className="flex items-center justify-between gap-2 rounded-xl bg-[#f5efe3] px-2.5 py-2 ring-1 ring-[#d9c8a4]">
-        <span className="text-[11px] font-black leading-6 tracking-[0.02em] text-[#0f172a]">الوقت المتبقي حتى انتهاء الإعلان</span>
-        <span className="tabular-nums text-[11px] font-black leading-6 text-[#0f172a]">{remainingLabel}</span>
+    <div className="mt-3 rounded-xl bg-[#f5efe3] px-2.5 py-2 text-[10px] font-black text-[#111827]" style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}>
+      <div className="flex items-center justify-center">
+        <span className="tabular-nums text-[#111827]">{remainingLabel}</span>
       </div>
-      <div className="mt-2 text-[10px] font-extrabold leading-6 text-[#111827]">تاريخ انتهاء الإعلان: {expiryLabel}</div>
-      <div className="mt-1 text-[10px] font-extrabold leading-6 text-[#111827]">الوقت المتبقي حتى انتهاء السحب: {remainingLabel}</div>
+      <div className="mt-1 text-center">{expiryLabel}</div>
     </div>
   );
 }
@@ -371,7 +358,7 @@ export default function Home() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [menuItems, setMenuItems] = useState<Item[]>([]);
-  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers" | "advertisements">(
+  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers" | "users" | "advertisements">(
     "orders",
   );
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -2100,6 +2087,12 @@ export default function Home() {
                     البائعون
                   </button>
                   <button
+                    onClick={() => setAdminTab("users")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "users" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    المستخدمين
+                  </button>
+                  <button
                     onClick={() => setAdminTab("advertisements")}
                     className={`rounded-lg px-5 py-2.5 transition ${adminTab === "advertisements" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
                   >
@@ -2142,6 +2135,8 @@ export default function Home() {
             <MarketingManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "sellers" && userRole === "admin" ? (
             <SellersManager />
+          ) : adminTab === "users" && userRole === "admin" ? (
+            <UsersManager />
           ) : adminTab === "advertisements" && userRole === "admin" ? (
             <div className="grid gap-5"><AdminAdvertisementsWorkspace /><RewardCampaignManager /></div>
           ) : adminTab === "targets" && userRole === "admin" ? (
@@ -3392,7 +3387,6 @@ function FeaturedAdvertisement({ advertisement }: { advertisement: PublicAdverti
         )}
         <div className="px-4 py-4 sm:px-5">
           <p className="line-clamp-3 text-sm leading-6 text-[#596963]">{advertisement.description}</p>
-          <AdvertisementExpiryMeta advertisement={advertisement} />
           <Link href={`/ads/${advertisement.id}`} className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md bg-[#c48738] px-5 text-sm font-bold text-white sm:w-auto">عرض ملف المعلن</Link>
         </div>
       </div>
@@ -3875,6 +3869,207 @@ function RewardCampaignManager() {
       </div>
       <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3"><h3 className="font-bold text-[#173f3a]">طلبات سحب الأرباح</h3><div className="mt-2 grid gap-2">{withdrawals.map((withdrawal) => <div key={withdrawal.id} className="grid gap-2 rounded-lg bg-white p-3 text-xs sm:grid-cols-[1fr_110px_130px_110px_auto]"><div><strong>{withdrawal.market_users?.display_name || "مستخدم"}</strong><span className="mr-2 text-[#72807a]">{withdrawal.market_users?.phone || ""}</span><p className="mt-1 text-[#72807a]">{new Date(withdrawal.created_at).toLocaleString("ar-EG")}</p></div><span className="grid place-items-center font-bold text-[#c48738]">{withdrawal.amount} جنيه</span><span className="grid place-items-center font-bold">{withdrawal.wallet_number}</span><span className="grid place-items-center font-bold text-[#596963]">{withdrawal.status === "pending" ? "قيد المراجعة" : withdrawal.status === "approved" ? "معتمد" : withdrawal.status === "paid" ? "تم الإرسال" : "مرفوض"}</span><div className="flex gap-1">{withdrawal.status === "pending" && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "approved")} className="h-9 rounded-lg bg-[#39704f] px-3 font-bold text-white">اعتماد</button>}{withdrawal.status === "approved" && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "paid")} className="h-9 rounded-lg bg-[#173f3a] px-3 font-bold text-white">تم الإرسال</button>}{["pending", "approved"].includes(withdrawal.status) && <button onClick={() => void changeWithdrawalStatus(withdrawal.id, "rejected")} className="h-9 rounded-lg bg-[#a9584d] px-3 font-bold text-white">رفض</button>}</div></div>)}{!withdrawals.length && <p className="py-4 text-center text-xs text-[#89918c]">لا توجد طلبات سحب.</p>}</div></div>
       {message && <p className="mt-3 text-center text-sm font-bold text-[#a9584d]">{message}</p>}
+    </section>
+  );
+}
+
+function UsersManager() {
+  const [users, setUsers] = useState<Array<{ id: number; display_name: string; phone: string; role: string; account_type: string; active: boolean; receive_offers: boolean; created_at: string; password_hash: string | null }>>([]);
+  const [query, setQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("الكل");
+  const [statusFilter, setStatusFilter] = useState("الكل");
+  const [passwordDrafts, setPasswordDrafts] = useState<Record<number, string>>({});
+  const [lastIssuedPassword, setLastIssuedPassword] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  const load = async () => {
+    const response = await fetch("/api/admin/users");
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحميل المستخدمين");
+    setUsers(result.users || []);
+    setMessage("");
+  };
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
+
+  const updateStatus = async (id: number, active: boolean) => {
+    const response = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, active }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تحديث حالة المستخدم");
+    setUsers((current) => current.map((user) => user.id === id ? { ...user, active } : user));
+    setMessage(active ? "تم تفعيل المستخدم" : "تم إيقاف المستخدم");
+  };
+
+  const roleLabels: Record<string, string> = {
+    customer: "عميل",
+    farm_owner: "مالك مزرعة",
+    trader: "بائع",
+    supplier: "مورد",
+  };
+
+  const resetPassword = async (id: number) => {
+    const password = (passwordDrafts[id] || "").trim();
+    if (!password || password.length < 4) {
+      setMessage("اكتب كلمة مرور من 4 أحرف أو أكثر");
+      return;
+    }
+
+    const response = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, password }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر إعادة تعيين كلمة المرور");
+
+    setLastIssuedPassword(result.password || null);
+    setPasswordDrafts((current) => ({ ...current, [id]: "" }));
+    setMessage("تم تحديث كلمة المرور. سيتم عرضها مرة واحدة فقط.");
+  };
+
+  const copyIssuedPassword = async () => {
+    if (!lastIssuedPassword) return;
+    try {
+      await navigator.clipboard.writeText(lastIssuedPassword);
+      setMessage("تم نسخ كلمة المرور الجديدة");
+    } catch {
+      setMessage("تعذر نسخ كلمة المرور الجديدة");
+    }
+  };
+
+  const visibleUsers = users.filter((user) => {
+    const matchesRole = roleFilter === "الكل" || user.role === roleFilter;
+    const matchesStatus = statusFilter === "الكل" || (statusFilter === "نشط" ? user.active : !user.active);
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchesQuery = !normalizedQuery || `${user.display_name} ${user.phone}`.toLowerCase().includes(normalizedQuery);
+    return matchesRole && matchesStatus && matchesQuery;
+  });
+
+  return (
+    <section className="grid gap-5">
+      <div className="rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-4">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#c48738]">إدارة الحسابات</p>
+            <h2 className="font-display text-2xl font-bold text-[#173f3a]">جميع المستخدمين</h2>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative">
+              <Search className="absolute right-3 top-3 text-[#9ca49d]" size={17} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="ابحث باسم المستخدم أو الهاتف"
+                className="h-11 w-full rounded-xl border border-[#dedfd8] bg-white pr-10 pl-3 text-sm outline-none transition focus:border-[#173f3a] sm:w-64"
+              />
+            </div>
+            <select
+              value={roleFilter}
+              onChange={(event) => setRoleFilter(event.target.value)}
+              className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+            >
+              <option value="الكل">الكل</option>
+              <option value="customer">عميل</option>
+              <option value="farm_owner">مالك مزرعة</option>
+              <option value="trader">بائع</option>
+              <option value="supplier">مورد</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+            >
+              <option value="الكل">جميع الحالات</option>
+              <option value="نشط">نشط</option>
+              <option value="موقوف">موقوف</option>
+            </select>
+          </div>
+        </div>
+
+        {lastIssuedPassword && (
+          <div className="mb-4 rounded-xl border border-[#cde9d5] bg-[#edf9f0] p-3 text-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-bold text-[#173f3a]">كلمة المرور الجديدة (يتم عرضها مرة واحدة)</p>
+                <p className="mt-1 break-all font-mono text-[#173f3a]">{lastIssuedPassword}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void copyIssuedPassword()}
+                className="h-9 rounded-lg bg-[#173f3a] px-3 text-xs font-bold text-white"
+              >
+                نسخ
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-3">
+          {visibleUsers.map((user) => (
+            <article key={user.id} className="grid gap-3 rounded-xl border border-[#e7e7df] bg-white p-4 lg:grid-cols-[1.2fr_1fr_1fr_auto] lg:items-center">
+              <div className="min-w-0">
+                <p className="font-bold text-[#173f3a]">{user.display_name}</p>
+                <p className="mt-1 text-sm text-[#596963]">{user.phone}</p>
+              </div>
+              <div className="text-sm text-[#596963]">
+                <p>الدور: <span className="font-bold text-[#173f3a]">{roleLabels[user.role] || user.role}</span></p>
+                <p>نوع الحساب: <span className="font-bold text-[#173f3a]">{user.account_type === "market" ? "سوق" : "عادي"}</span></p>
+              </div>
+              <div className="text-sm text-[#596963]">
+                <p>الحالة: <span className={`font-bold ${user.active ? "text-[#39704f]" : "text-[#a9584d]"}`}>{user.active ? "نشط" : "موقوف"}</span></p>
+                <p>تاريخ الإنشاء: <span className="font-bold text-[#173f3a]">{new Date(user.created_at).toLocaleDateString("ar-EG")}</span></p>
+              </div>
+              <div className="text-sm text-[#596963]">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-bold text-[#173f3a]">كلمة المرور</p>
+                  <span className="rounded-lg bg-[#f7faf6] px-2 py-1 text-[10px] font-bold text-[#173f3a]">
+                    محمية
+                  </span>
+                </div>
+                <p className="mt-1 rounded-lg bg-[#f7faf6] p-2 text-[11px] text-[#596963]">
+                  لا يمكن عرض كلمة المرور الحالية. استخدم إعادة التعيين لإدخال كلمة مرور جديدة وتظهر مرة واحدة فقط.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={passwordDrafts[user.id] || ""}
+                    onChange={(event) => setPasswordDrafts((current) => ({ ...current, [user.id]: event.target.value }))}
+                    placeholder="كلمة مرور جديدة"
+                    type="text"
+                    className="h-9 flex-1 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs outline-none focus:border-[#173f3a]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void resetPassword(user.id)}
+                    className="h-9 rounded-lg bg-[#c48738] px-2 text-[10px] font-bold text-white"
+                  >
+                    تعيين
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void updateStatus(user.id, !user.active)}
+                className={`h-10 rounded-xl px-4 text-sm font-bold text-white ${user.active ? "bg-[#a9584d]" : "bg-[#39704f]"}`}
+              >
+                {user.active ? "إيقاف" : "تفعيل"}
+              </button>
+            </article>
+          ))}
+          {!visibleUsers.length && (
+            <p className="rounded-xl border border-dashed border-[#dedfd8] py-10 text-center text-sm text-[#89918c]">
+              لا توجد مستخدمين مطابقين لهذا البحث.
+            </p>
+          )}
+        </div>
+        {message && <p className="mt-4 text-center text-sm font-semibold text-[#a9584d]">{message}</p>}
+      </div>
     </section>
   );
 }

@@ -118,6 +118,8 @@ export async function POST(request: NextRequest) {
   const rewardEnabled = String(form.get("reward_enabled")) === "true";
   const rewardMode = ["points", "discount", "gift", "cash"].includes(String(form.get("reward_mode"))) ? String(form.get("reward_mode")) : "points";
   const payoutMode = form.get("payout_mode") === "pool" ? "pool" : "fixed";
+  const withdrawalMode = ["end_of_campaign", "custom_date"].includes(String(form.get("withdrawal_mode"))) ? String(form.get("withdrawal_mode")) : "end_of_campaign";
+  const withdrawalAtValue = String(form.get("withdrawal_at") || "").trim();
   const actionType = ["referral", "view", "like", "share"].includes(String(form.get("action_type"))) ? String(form.get("action_type")) : "referral";
   const rewardPoints = Number(form.get("reward_points"));
   const rewardAmount = Number(form.get("reward_amount"));
@@ -125,7 +127,9 @@ export async function POST(request: NextRequest) {
   const productPrice = Number(form.get("product_price"));
   const maxRecipients = String(form.get("max_recipients") || "").trim();
   const requiredSeconds = Number(form.get("required_seconds"));
+  const withdrawalAt = withdrawalMode === "custom_date" && withdrawalAtValue ? new Date(withdrawalAtValue) : null;
   if (!title || !description) return NextResponse.json({ error: "اكتب عنوان الإعلان ووصفه" }, { status: 400 });
+  if (withdrawalMode === "custom_date" && (!withdrawalAt || Number.isNaN(withdrawalAt.getTime()))) return NextResponse.json({ error: "اختر تاريخ السحب المحدد بشكل صحيح" }, { status: 400 });
   if (rewardEnabled && (!Number.isInteger(rewardPoints) || rewardPoints < 0 || !Number.isFinite(rewardAmount) || rewardAmount < 0 || !Number.isFinite(rewardBudget) || rewardBudget < 0 || (rewardMode === "cash" && payoutMode === "pool" && rewardBudget <= 0) || (rewardMode === "cash" && payoutMode === "fixed" && rewardAmount <= 0) || (rewardMode === "discount" && (!Number.isInteger(rewardAmount) || rewardAmount < 1 || rewardAmount > 100 || !Number.isFinite(productPrice) || productPrice <= 0 || !maxRecipients)) || (maxRecipients && (!Number.isInteger(Number(maxRecipients)) || Number(maxRecipients) < 1)))) return NextResponse.json({ error: "بيانات المكافأة غير صحيحة" }, { status: 400 });
   const { data: packageData } = await client.from("advertisement_packages").select("id,duration_days,price").eq("id", packageId).eq("active", true).maybeSingle();
   if (!packageData) return NextResponse.json({ error: "اختر باقة إعلانية صحيحة" }, { status: 400 });
@@ -152,7 +156,7 @@ export async function POST(request: NextRequest) {
     const effectiveBudget = rewardMode === "discount"
       ? Number((productPrice * (rewardAmount / 100) * Number(maxRecipients)).toFixed(2))
       : rewardBudget;
-    const { data: campaign, error: campaignError } = await client.from("ad_reward_campaigns").insert({ advertisement_id: data.id, name: `${title} - حملة مكافآت`, reward_mode: rewardMode, budget: effectiveBudget, product_price: rewardMode === "discount" ? productPrice : null, max_recipients: maxRecipients ? Number(maxRecipients) : null, status: "draft" }).select("id").single();
+    const { data: campaign, error: campaignError } = await client.from("ad_reward_campaigns").insert({ advertisement_id: data.id, name: `${title} - حملة مكافآت`, reward_mode: rewardMode, budget: effectiveBudget, product_price: rewardMode === "discount" ? productPrice : null, max_recipients: maxRecipients ? Number(maxRecipients) : null, withdrawal_mode: withdrawalMode, withdrawal_at: withdrawalAt ? withdrawalAt.toISOString() : null, status: "draft" }).select("id").single();
     if (campaignError) return NextResponse.json({ error: campaignError.message }, { status: 400 });
     const effectiveRewardAmount = rewardMode === "cash" && payoutMode === "fixed" ? rewardAmount : 0;
     const rewardLabel = rewardMode === "discount" ? `خصم ${rewardAmount}%` : null;

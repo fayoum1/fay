@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     client.from("advertisement_engagements").select("id", { count: "exact", head: true }).eq("advertisement_id", id).eq("event_type", "like"),
     client.from("ad_referrals").select("id,ad_reward_campaigns!inner(advertisement_id)", { count: "exact", head: true }).eq("ad_reward_campaigns.advertisement_id", id),
   ]);
-  const { data: advertiserProfile } = await client.from("market_users").select("id,display_name,phone,role,account_type,profile_image_url,referral_code").eq("phone", data.phone).eq("account_type", "market").maybeSingle();
+  const { data: advertiserProfile } = await client.from("market_users").select("id,display_name,phone,role,account_type,profile_image_url,cover_image_url,referral_code").eq("phone", data.phone).eq("account_type", "market").maybeSingle();
   const { data: rewardCampaign } = await client
     .from("ad_reward_campaigns")
     .select("id,reward_mode,budget,max_recipients,per_user_limit,ad_reward_actions(id,action_type,reward_points,reward_amount,reward_label,required_seconds,max_rewards,enabled)")

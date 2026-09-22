@@ -23,6 +23,8 @@ type Advertisement = {
   video_url?: string | null;
   target_url?: string | null;
   whatsapp?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
   views?: number;
   clicks?: number;
   likes?: number;
@@ -32,6 +34,7 @@ type Advertisement = {
     phone: string;
     role: string;
     profile_image_url?: string | null;
+    cover_image_url?: string | null;
   } | null;
   watch_required_seconds?: number | null;
   reward_campaign?: {
@@ -65,6 +68,39 @@ function formatCount(value?: number) {
   return `${compact >= 10 ? Math.floor(compact) : Number(compact.toFixed(1))}${suffix}`;
 }
 
+function getAdvertisementRemainingMs(startValue?: string | null, endValue?: string | null, now = Date.now()) {
+  if (!endValue) return null;
+  const endTime = new Date(endValue);
+  if (Number.isNaN(endTime.getTime())) return null;
+  if (startValue) {
+    const startTime = new Date(startValue);
+    if (!Number.isNaN(startTime.getTime()) && now < startTime.getTime()) {
+      return Math.max(0, startTime.getTime() - now);
+    }
+  }
+  return Math.max(0, endTime.getTime() - now);
+}
+
+function formatAdvertisementCountdown(startValue?: string | null, endValue?: string | null, now = Date.now()) {
+  const remainingMs = getAdvertisementRemainingMs(startValue, endValue, now);
+  if (remainingMs === null) return "غير محدد";
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  if (days > 0) return `${days} يوم ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+function formatAdvertisementExpiry(value?: string | null) {
+  if (!value) return "غير محدد";
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) return "غير محدد";
+  return expiry.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" });
+}
+
 type MarketUser = {
   account_type?: "ordinary" | "market";
   referral_code?: string | null;
@@ -89,7 +125,15 @@ export default function AdvertisementProfile({
   const [interactionMessage, setInteractionMessage] = useState("");
   const [showRewardGate, setShowRewardGate] = useState(false);
   const [watchLoginPrompted, setWatchLoginPrompted] = useState(false);
+  const [countdownNow, setCountdownNow] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const updateNow = () => setCountdownNow(Date.now());
+    updateNow();
+    const tick = window.setInterval(updateNow, 1000);
+    return () => window.clearInterval(tick);
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -259,6 +303,11 @@ export default function AdvertisementProfile({
     /\D/g,
     "",
   );
+  const remainingSaleLabel = countdownNow === null
+    ? "جارٍ التحديث..."
+    : formatAdvertisementCountdown(advertisement.starts_at, advertisement.ends_at, countdownNow);
+  const drawExpiryLabel = formatAdvertisementExpiry(advertisement.ends_at);
+  const advertisementStartLabel = formatAdvertisementExpiry(advertisement.starts_at);
   return (
     <main
       className="min-h-screen bg-[#f7f6f2] py-0 text-[#202a27] sm:px-6 sm:py-10"
@@ -308,41 +357,60 @@ export default function AdvertisementProfile({
           </div>
         </div>
       )}
-      <div className="relative mx-auto w-full max-w-3xl">
-        <Link
-          href="/"
-          aria-label="العودة إلى الرئيسية"
-          title="الرئيسية"
-          className="absolute left-3 top-3 z-20 grid size-9 place-items-center rounded-lg border border-[#dedfd8] bg-white/95 text-[#173f3a] shadow-sm"
-        >
-          <ArrowRight size={17} />
-        </Link>
-        <article className="overflow-hidden border-y border-[#dedfd8] bg-[#fffdf9] shadow-[0_12px_32px_#173f3a0d] sm:rounded-xl sm:border">
-          <div className="border-b border-[#e7e7df] p-5 sm:p-7">
-            <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
-            <div className="mt-3 flex items-center gap-3">
+      <div className="mx-auto w-full max-w-3xl px-0 pb-5 sm:px-2">
+        <header className="sticky top-0 z-30 border-b border-[#e9ece7] bg-[#fffdf9]/90 px-3 py-2 backdrop-blur-md sm:px-4">
+          <div className="mx-auto flex max-w-[760px] items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden">
               {advertisement.advertiser_profile?.profile_image_url ? (
                 <img
                   src={advertisement.advertiser_profile.profile_image_url}
                   alt=""
-                  className="size-12 rounded-xl object-cover"
+                  className="size-9 rounded-full object-cover ring-2 ring-[#eef1ee]"
                 />
               ) : (
-                <div className="grid size-12 place-items-center rounded-xl bg-[#173f3a] font-black text-[#f4c95d]">
+                <div className="grid size-9 place-items-center rounded-full bg-[#173f3a] text-xs font-black text-[#f4c95d] ring-2 ring-[#eef1ee]">
                   {advertisement.advertiser_name.charAt(0)}
                 </div>
               )}
-              <div>
-                <p className="text-xs text-[#72807a]">المعلن</p>
-                <p className="font-bold text-[#173f3a]">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-black text-[#173f3a]">
                   {advertisement.advertiser_profile?.display_name ||
                     advertisement.advertiser_name}
                 </p>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <span className="text-[9px] font-bold text-[#c48738]">إعلان ممول</span>
+                  {advertisement.reward_campaign?.reward_badge && (
+                    <span className="rounded-full bg-[#e9f4ee] px-1.5 py-0.5 text-[8px] font-black text-[#39704f]">
+                      {advertisement.reward_campaign.reward_badge}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+            <Link
+              href="/"
+              aria-label="العودة إلى الرئيسية"
+              title="الرئيسية"
+              className="order-last grid size-9 shrink-0 place-items-center rounded-full border border-[#dedfd8] bg-white text-[#173f3a] shadow-sm"
+            >
+              <ArrowRight size={17} className="rotate-180" />
+            </Link>
           </div>
+        </header>
+        <article className="overflow-hidden border-y border-[#dedfd8] bg-[#fffdf9] shadow-[0_6px_18px_rgba(23,63,58,0.08)] sm:mx-auto sm:max-w-[760px] sm:rounded-[24px] sm:border sm:shadow-[0_12px_30px_rgba(23,63,58,0.08)]">
+          {advertisement.advertiser_profile?.cover_image_url && (
+            <div className="h-32 overflow-hidden bg-[#edf2ee] sm:h-44">
+              <img
+                src={advertisement.advertiser_profile.cover_image_url}
+                alt="غلاف المعلن"
+                className="h-full w-full object-cover object-center"
+                loading="eager"
+              />
+            </div>
+          )}
           {advertisement.media_type === "video" && advertisement.video_url ? (
-            <div className="flex w-full justify-center overflow-hidden bg-[#18201e] sm:my-6">
+            <div className="bg-[#f2f3f0] p-0 sm:p-3">
+              <div className="flex w-full justify-center overflow-hidden bg-white sm:rounded-[22px]">
                 <video
                   ref={videoRef}
                   src={advertisement.video_url}
@@ -354,31 +422,34 @@ export default function AdvertisementProfile({
                   onTimeUpdate={(event) =>
                     submitWatchReward(event.currentTarget.currentTime)
                   }
-                  className="block h-auto max-h-[70dvh] w-auto max-w-full object-contain sm:rounded-2xl"
+                  className="block h-auto max-h-[70dvh] w-full max-w-full bg-[#18201e] object-contain"
                 />
+              </div>
             </div>
           ) : (
             advertisement.image_url && (
-              <div className="relative mx-auto aspect-[9/16] w-full max-w-[430px] overflow-hidden bg-[#18201e] shadow-[0_18px_50px_#173f3a26] sm:my-6 sm:rounded-2xl">
-                <img
-                  src={advertisement.image_url}
-                  alt=""
-                  aria-hidden="true"
-                  className="absolute inset-0 size-full scale-110 object-cover opacity-45 blur-xl"
-                />
-                <img
-                  src={advertisement.image_url}
-                  alt={advertisement.title}
-                  className="relative z-10 size-full object-contain"
-                />
+              <div className="bg-[#f2f3f0] p-0 sm:p-3">
+                <div className="relative mx-auto aspect-[4/5] w-full max-w-[640px] overflow-hidden bg-white sm:rounded-[22px]">
+                  <img
+                    src={advertisement.image_url}
+                    alt=""
+                    aria-hidden="true"
+                    className="absolute inset-0 size-full scale-110 object-cover opacity-35 blur-xl"
+                  />
+                  <img
+                    src={advertisement.image_url}
+                    alt={advertisement.title}
+                    className="relative z-10 size-full object-contain"
+                  />
+                </div>
               </div>
             )
           )}
-          <div className="border-b border-[#e7e7df] px-5 py-4 sm:px-7">
-            <div className="flex w-full items-center justify-evenly divide-x divide-x-reverse divide-[#e1e5df] border-y border-[#e1e5df]">
-              <div aria-label="المشاهدات" title="المشاهدات" className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]">
-                <Eye size={19} />
-                <span className="text-xs font-black tabular-nums">{formatCount(advertisement.views)}</span>
+          <div className="border-b border-[#e7e7df] bg-[#f8faf7] px-3 py-3 sm:px-7 sm:py-4">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:w-full sm:items-center sm:justify-evenly sm:gap-2 sm:divide-x sm:divide-x-reverse sm:divide-[#e1e5df]">
+              <div aria-label="المشاهدات" title="المشاهدات" className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-2xl border border-[#e1e5df] bg-white px-3 py-2.5 text-[#173f3a] shadow-[0_4px_10px_rgba(23,63,58,0.03)]">
+                <Eye size={16} className="sm:size-[18px]" />
+                <span className="text-[11px] font-black tabular-nums sm:text-xs">{formatCount(advertisement.views)}</span>
               </div>
               {whatsapp && (
                 <a
@@ -391,10 +462,10 @@ export default function AdvertisementProfile({
                   href={`https://wa.me/${whatsapp}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#16804a]"
+                  className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-2xl border border-[#d8ebdf] bg-[#f1faf4] px-3 py-2.5 text-[#16804a] shadow-[0_4px_10px_rgba(23,63,58,0.03)]"
                 >
-                  <MessageCircle size={19} />
-                  <span className="text-xs font-black tabular-nums">{formatCount(advertisement.clicks)}</span>
+                  <MessageCircle size={16} className="sm:size-[18px]" />
+                  <span className="text-[11px] font-black tabular-nums sm:text-xs">{formatCount(advertisement.clicks)}</span>
                 </a>
               )}
               {whatsapp && (
@@ -406,10 +477,10 @@ export default function AdvertisementProfile({
                     else trackClick();
                   }}
                   href={`tel:${whatsapp}`}
-                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]"
+                  className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-2xl border border-[#e1e5df] bg-white px-3 py-2.5 text-[#173f3a] shadow-[0_4px_10px_rgba(23,63,58,0.03)]"
                 >
-                  <Phone size={19} />
-                  <span className="text-xs font-black tabular-nums">{formatCount(advertisement.clicks)}</span>
+                  <Phone size={16} className="sm:size-[18px]" />
+                  <span className="text-[11px] font-black tabular-nums sm:text-xs">{formatCount(advertisement.clicks)}</span>
                 </a>
               )}
               {advertisement.target_url && (
@@ -423,10 +494,10 @@ export default function AdvertisementProfile({
                   href={advertisement.target_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]"
+                  className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-2xl border border-[#e1e5df] bg-white px-3 py-2.5 text-[#173f3a] shadow-[0_4px_10px_rgba(23,63,58,0.03)]"
                 >
-                  <ExternalLink size={19} />
-                  <span className="text-xs font-black tabular-nums">{formatCount(advertisement.clicks)}</span>
+                  <ExternalLink size={16} className="sm:size-[18px]" />
+                  <span className="text-[11px] font-black tabular-nums sm:text-xs">{formatCount(advertisement.clicks)}</span>
                 </a>
               )}
               <button
@@ -434,10 +505,10 @@ export default function AdvertisementProfile({
                 aria-label="مشاركة الإعلان"
                 title="مشاركة"
                 onClick={() => void shareAdvertisement()}
-                className="inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 text-[#173f3a]"
+                className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-2xl border border-[#e1e5df] bg-white px-3 py-2.5 text-[#173f3a] shadow-[0_4px_10px_rgba(23,63,58,0.03)]"
               >
-                <Share2 size={19} />
-                <span className="text-xs font-black tabular-nums">{formatCount(advertisement.referrals)}</span>
+                <Share2 size={16} className="sm:size-[18px]" />
+                <span className="text-[11px] font-black tabular-nums sm:text-xs">{formatCount(advertisement.referrals)}</span>
               </button>
               <button
                 type="button"
@@ -463,10 +534,10 @@ export default function AdvertisementProfile({
                     })
                     .catch((reason: Error) => setInteractionMessage(reason.message));
                 }}
-                className={`inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 py-3 ${liked ? "text-[#a13f61]" : "text-[#173f3a]"}`}
+                className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-2xl border px-3 py-2.5 shadow-[0_4px_10px_rgba(23,63,58,0.03)] ${liked ? "border-[#f4d4de] bg-[#fff1f5] text-[#a13f61]" : "border-[#e1e5df] bg-white text-[#173f3a]"}`}
               >
-                <Heart size={19} fill={liked ? "currentColor" : "none"} />
-                <span className="text-xs font-black tabular-nums">{formatCount(advertisement.likes)}</span>
+                <Heart size={16} className="sm:size-[18px]" fill={liked ? "currentColor" : "none"} />
+                <span className="text-[11px] font-black tabular-nums sm:text-xs">{formatCount(advertisement.likes)}</span>
               </button>
             </div>
             {advertisement.reward_campaign?.reward_badge && (
@@ -489,15 +560,15 @@ export default function AdvertisementProfile({
                 {interactionMessage}
               </p>
             )}
-            <h1 className="mt-5 font-display text-2xl font-bold text-[#173f3a] sm:text-3xl">
+            <h1 className="mt-4 font-display text-[1.55rem] font-black leading-8 text-[#173f3a] sm:mt-5 sm:text-[2rem] sm:leading-[1.25]">
               {advertisement.title}
             </h1>
-            <p className="mt-2 text-sm text-[#596963]">
+            <p className="mt-2 text-xs text-[#596963] sm:text-sm">
               بواسطة: {advertisement.advertiser_profile?.role || "معلن"}
             </p>
           </div>
-          <div className="p-5 sm:p-7">
-            <p className="whitespace-pre-line text-base leading-8 text-[#596963]">
+          <div className="px-3 pb-4 pt-3 sm:px-7 sm:pb-7 sm:pt-4">
+            <p className="whitespace-pre-line text-sm leading-7 text-[#596963] sm:text-base sm:leading-8">
               {advertisement.description}
             </p>
             {!!advertisement.reward_campaign?.actions.length && (
@@ -519,16 +590,19 @@ export default function AdvertisementProfile({
                 </p>
               </section>
             )}
-            <div className="mt-5 flex items-center gap-3 text-xs font-bold text-[#89918c]">
-              <span>المشاهدات: {advertisement.views || 0}</span>
-              <span>النقرات: {advertisement.clicks || 0}</span>
-              <span>الإعجابات: {advertisement.likes || 0}</span>
+            <div className="mt-5 rounded-2xl border border-[#d9c8a4] bg-gradient-to-br from-[#fffdf8] via-[#fffaf0] to-[#f5efe3] p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
+              <div className="flex items-center justify-between gap-3 rounded-xl bg-[#f5efe3] px-2.5 py-2 ring-1 ring-[#d9c8a4]">
+                <span className="text-[11px] font-black text-[#0f172a]">الوقت المتبقي للسحب</span>
+                <span className="tabular-nums text-[11px] font-black text-[#0f172a]">{remainingSaleLabel}</span>
+              </div>
+              <div className="mt-2 text-[10px] font-extrabold text-[#111827]">تاريخ بدء الإعلان: {advertisementStartLabel}</div>
+              <div className="mt-1 text-[10px] font-extrabold text-[#111827]">تاريخ انتهاء الإعلان: {drawExpiryLabel}</div>
             </div>
           </div>
         </article>
         {!!advertisement.other_ads?.length && (
           <section className="mt-5">
-            <h2 className="mb-3 font-display text-xl font-bold text-[#173f3a]">
+            <h2 className="mb-3 text-center font-display text-xl font-bold text-[#173f3a]">
               إعلانات أخرى للمعلن
             </h2>
             <div className="grid gap-3 sm:grid-cols-2">

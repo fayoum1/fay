@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import { Suspense } from "react";
 import {
@@ -49,6 +49,7 @@ type MarketUser = {
   receive_offers: boolean;
   referral_code?: string | null;
   profile_image_url?: string | null;
+  cover_image_url?: string | null;
   wallet_number?: string | null;
 };
 type Withdrawal = {
@@ -278,6 +279,7 @@ function MobileMenu({
 }
 
 function SellPageContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<"offer" | "ads">("ads");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -338,6 +340,8 @@ function SellPageContent() {
     reward_enabled: false,
     reward_mode: "points",
     payout_mode: "pool",
+    withdrawal_mode: "end_of_campaign",
+    withdrawal_at: "",
     action_type: "referral",
     reward_points: "1",
     reward_amount: "0",
@@ -552,12 +556,12 @@ function SellPageContent() {
     setOffers([]);
     setMessage("تم تسجيل الخروج");
   };
-  const updateProfileImage = async (file: File) => {
+  const updateProfileImage = async (file: File, type: "profile" | "cover" = "profile") => {
     setSaving(true);
     setMessage("");
     setError("");
     const body = new FormData();
-    body.append("profile_image", file);
+    body.append(type === "profile" ? "profile_image" : "cover_image", file);
     try {
       const response = await fetch("/api/sellers/account", {
         method: "PATCH",
@@ -570,10 +574,15 @@ function SellPageContent() {
       }
       setUser((current) =>
         current
-          ? { ...current, profile_image_url: result.profile_image_url }
+          ? {
+              ...current,
+              ...(type === "profile"
+                ? { profile_image_url: result.profile_image_url }
+                : { cover_image_url: result.cover_image_url }),
+            }
           : current,
       );
-      setMessage("تم تحديث صورة البروفايل");
+      setMessage(type === "profile" ? "تم تحديث صورة البروفايل" : "تم تحديث صورة الغلاف");
     } finally {
       setSaving(false);
     }
@@ -1007,18 +1016,14 @@ function SellPageContent() {
           ) : (
             <>
               <section className="mb-5 -mx-5 overflow-hidden border-b border-[#d8dfd6] bg-transparent sm:-mx-8">
-                <div className="flex flex-wrap items-center gap-4 border-b border-[#e7e7df] bg-[#f7faf6] p-4">
-                  <label className="size-16 shrink-0 cursor-pointer rounded-xl outline-none ring-[#c48738] transition hover:ring-2 focus-within:ring-2" title="اضغط لتغيير صورة البروفايل">
-                    {user.profile_image_url ? (
-                      <img
-                        src={user.profile_image_url}
-                        alt="صورة البروفايل"
-                        className="size-16 rounded-xl object-cover"
-                      />
+                <div className="relative border-b border-[#e7e7df] bg-[#f7faf6]">
+                  <label className="block h-28 w-full cursor-pointer overflow-hidden border-b border-[#e7e7df] bg-gradient-to-r from-[#dfe9e5] via-[#f9faf7] to-[#e7e3d6] sm:h-36" title="اضغط لتغيير صورة الغلاف">
+                    {user.cover_image_url ? (
+                      <img src={user.cover_image_url} alt="غلاف المعلن" className="h-full w-full object-cover object-center" loading="eager" />
                     ) : (
-                      <span className="grid size-16 place-items-center rounded-xl bg-[#173f3a] text-2xl font-black text-[#f4c95d]">
-                        {user.display_name.trim().charAt(0) || "م"}
-                      </span>
+                      <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_top,_#f4efdf,_#e3efe9_38%,_#dfe9e5_100%)] text-sm font-black text-[#173f3a]">
+                        صورة غلاف المعلن
+                      </div>
                     )}
                     <input
                       type="file"
@@ -1027,12 +1032,37 @@ function SellPageContent() {
                       className="sr-only"
                       onChange={(event) => {
                         const file = event.target.files?.[0];
-                        if (file) void updateProfileImage(file);
+                        if (file) void updateProfileImage(file, "cover");
                         event.currentTarget.value = "";
                       }}
                     />
                   </label>
-                  <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-4 px-4 pb-4 pt-3">
+                    <label className="size-16 shrink-0 cursor-pointer rounded-xl outline-none ring-[#c48738] transition hover:ring-2 focus-within:ring-2" title="اضغط لتغيير صورة البروفايل">
+                      {user.profile_image_url ? (
+                        <img
+                          src={user.profile_image_url}
+                          alt="صورة البروفايل"
+                          className="size-16 rounded-xl object-cover"
+                        />
+                      ) : (
+                        <span className="grid size-16 place-items-center rounded-xl bg-[#173f3a] text-2xl font-black text-[#f4c95d]">
+                          {user.display_name.trim().charAt(0) || "م"}
+                        </span>
+                      )}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        disabled={saving}
+                        className="sr-only"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void updateProfileImage(file, "profile");
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
+                    <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-[#c48738]">
                       {user.account_type === "ordinary"
                         ? "حساب المكافآت"
@@ -1054,6 +1084,7 @@ function SellPageContent() {
                         كود المشاركة: {user.referral_code}
                       </p>
                     )}
+                    </div>
                   </div>
                 </div>
                 <div className={`${user.account_type === "ordinary" ? "hidden" : "grid"} grid-cols-3 divide-x divide-x-reverse divide-[#e7e7df] text-center`}>
@@ -1238,9 +1269,18 @@ function SellPageContent() {
               ) : createMode === "offer" ? (
                 <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
                   <form onSubmit={submitOffer} className="grid gap-4">
-                    <h2 className="font-display text-xl font-bold text-[#173f3a]">
-                      إضافة عرض بيع خاص
-                    </h2>
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="font-display text-xl font-bold text-[#173f3a]">
+                        إضافة عرض بيع خاص
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setCreateMode(null)}
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dedfd8] bg-white px-3 text-xs font-bold text-[#596963]"
+                      >
+                        <ArrowRight size={14} className="rotate-180" /> العودة إلى حساب السوق
+                      </button>
+                    </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <input
                         required
@@ -1417,9 +1457,9 @@ function SellPageContent() {
                       <button
                         type="button"
                         onClick={() => setCreateMode(null)}
-                        className="h-9 rounded-lg border border-[#dedfd8] bg-white px-3 text-xs font-bold text-[#596963]"
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dedfd8] bg-white px-3 text-xs font-bold text-[#596963]"
                       >
-                        العودة إلى حساب السوق
+                        <ArrowRight size={14} className="rotate-180" /> العودة إلى حساب السوق
                       </button>
                     </div>
                     <label className="grid gap-1 text-sm font-bold text-[#596963]">
@@ -1494,6 +1534,46 @@ function SellPageContent() {
                           </p>
                           <div className="grid gap-3 sm:grid-cols-2">
                             <label className="grid gap-1 text-sm font-bold text-[#596963]">
+                              وقت السحب
+                              <span className="text-xs font-normal text-[#89918c]">
+                                هل تريد السحب عند انتهاء الإعلان أم في وقت محدد؟
+                              </span>
+                              <select
+                                value={adForm.withdrawal_mode}
+                                onChange={(event) =>
+                                  setAdForm({
+                                    ...adForm,
+                                    withdrawal_mode: event.target.value,
+                                  })
+                                }
+                                className={inputClass}
+                              >
+                                <option value="end_of_campaign">عند انتهاء الإعلان</option>
+                                <option value="custom_date">وقت محدد</option>
+                              </select>
+                            </label>
+                            {adForm.withdrawal_mode === "custom_date" && (
+                              <label className="grid gap-1 text-sm font-bold text-[#596963]">
+                                تاريخ ووقت السحب
+                                <span className="text-xs font-normal text-[#89918c]">
+                                  سيحصل السحب في هذا التاريخ إذا كان مكتملًا
+                                </span>
+                                <input
+                                  type="datetime-local"
+                                  value={adForm.withdrawal_at}
+                                  onChange={(event) =>
+                                    setAdForm({
+                                      ...adForm,
+                                      withdrawal_at: event.target.value,
+                                    })
+                                  }
+                                  className={inputClass}
+                                />
+                              </label>
+                            )}
+                          </div>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <label className="grid gap-1 text-sm font-bold text-[#596963]">
                               نوع التفاعل
                               <span className="text-xs font-normal text-[#89918c]">
                                 ما الذي يفعله الزائر ليستحق المكافأة؟
@@ -1508,9 +1588,7 @@ function SellPageContent() {
                                 }
                                 className={inputClass}
                               >
-                                <option value="referral">
-                                  إحالة زائر جديد
-                                </option>
+                                <option value="referral">إحالة زائر جديد</option>
                                 <option value="view">مشاهدة فيديو</option>
                                 <option value="like">إعجاب داخل الموقع</option>
                                 <option value="share">مشاركة</option>
@@ -1551,25 +1629,25 @@ function SellPageContent() {
                           </div>
                           <div className="grid gap-3 sm:grid-cols-2">
                             {adForm.reward_mode === "points" && (
-                            <label className="grid gap-1 text-sm font-bold text-[#596963]">
-                              النقاط لكل مستفيد
-                              <span className="text-xs font-normal text-[#89918c]">
-                                اكتب عدد النقاط عند اختيار النقاط
-                              </span>
-                              <input
-                                type="number"
-                                min="0"
-                                value={adForm.reward_points}
-                                onChange={(event) =>
-                                  setAdForm({
-                                    ...adForm,
-                                    reward_points: event.target.value,
-                                  })
-                                }
-                                placeholder="مثال: 20"
-                                className={inputClass}
-                              />
-                            </label>
+                              <label className="grid gap-1 text-sm font-bold text-[#596963]">
+                                النقاط لكل مستفيد
+                                <span className="text-xs font-normal text-[#89918c]">
+                                  اكتب عدد النقاط عند اختيار النقاط
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={adForm.reward_points}
+                                  onChange={(event) =>
+                                    setAdForm({
+                                      ...adForm,
+                                      reward_points: event.target.value,
+                                    })
+                                  }
+                                  placeholder="مثال: 20"
+                                  className={inputClass}
+                                />
+                              </label>
                             )}
                             {adForm.reward_mode === "cash" && (
                               <label className="grid gap-1 text-sm font-bold text-[#596963]">
@@ -1590,26 +1668,26 @@ function SellPageContent() {
                               </label>
                             )}
                             {adForm.reward_mode === "cash" && adForm.payout_mode === "fixed" && (
-                            <label className="grid gap-1 text-sm font-bold text-[#596963]">
-                              المبلغ لكل مستفيد
-                              <span className="text-xs font-normal text-[#89918c]">
-                                مبلغ نقدي معلق حتى اعتماد الإدارة
-                              </span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={adForm.reward_amount}
-                                onChange={(event) =>
-                                  setAdForm({
-                                    ...adForm,
-                                    reward_amount: event.target.value,
-                                  })
-                                }
-                                placeholder="مثال: 10"
-                                className={inputClass}
-                              />
-                            </label>
+                              <label className="grid gap-1 text-sm font-bold text-[#596963]">
+                                المبلغ لكل مستفيد
+                                <span className="text-xs font-normal text-[#89918c]">
+                                  مبلغ نقدي معلق حتى اعتماد الإدارة
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={adForm.reward_amount}
+                                  onChange={(event) =>
+                                    setAdForm({
+                                      ...adForm,
+                                      reward_amount: event.target.value,
+                                    })
+                                  }
+                                  placeholder="مثال: 10"
+                                  className={inputClass}
+                                />
+                              </label>
                             )}
                             {adForm.reward_mode === "discount" && (
                               <label className="grid gap-1 text-sm font-bold text-[#596963]">

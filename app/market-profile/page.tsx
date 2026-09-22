@@ -11,6 +11,7 @@ type ProfileData = {
     display_name: string;
     role: string;
     profile_image_url?: string | null;
+    cover_image_url?: string | null;
     referral_code: string;
   };
   advertisements: {
@@ -76,6 +77,16 @@ function MarketProfileContent() {
           <ArrowRight size={16} /> صفحة السوق
         </Link>
         <section className="overflow-hidden rounded-2xl border border-[#d8dfd6] bg-[#fffdf9]">
+          {data.user.cover_image_url && (
+            <div className="h-36 overflow-hidden bg-[#edf2ee] sm:h-48">
+              <img
+                src={data.user.cover_image_url}
+                alt="غلاف المعلن"
+                className="h-full w-full object-cover object-center"
+                loading="eager"
+              />
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-4 bg-[#f7faf6] p-6">
             <div className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-2xl bg-[#173f3a] text-3xl font-black text-[#f4c95d]">
               {data.user.profile_image_url ? (
