@@ -101,6 +101,8 @@ type PublicAdvertisement = {
   whatsapp?: string | null;
   featured?: boolean;
   reward_badge?: string | null;
+  starts_at?: string | null;
+  ends_at?: string | null;
 };
 type MarketTrader = { id: number; display_name: string; phone: string; receive_offers: boolean };
 const orderStatuses: OrderStatus[] = [
@@ -204,6 +206,84 @@ function formatRelativeTime(value: string | undefined, now: number) {
   if (hours < 24) return `تم التغيير منذ ${hours} ${hours === 1 ? "ساعة" : "ساعات"}`;
   const days = Math.floor(hours / 24);
   return `تم التغيير منذ ${days} ${days === 1 ? "يوم" : "أيام"}`;
+}
+
+function getAdvertisementRemainingMs(startValue?: string | null, endValue?: string | null, now = Date.now()) {
+  if (!endValue) return null;
+  const endTime = new Date(endValue);
+  if (Number.isNaN(endTime.getTime())) return null;
+  if (startValue) {
+    const startTime = new Date(startValue);
+    if (!Number.isNaN(startTime.getTime())) {
+      if (now < startTime.getTime()) return Math.max(0, startTime.getTime() - now);
+    }
+  }
+  return Math.max(0, endTime.getTime() - now);
+}
+
+function formatAdvertisementCountdown(startValue?: string | null, endValue?: string | null, now = Date.now()) {
+  const remainingMs = getAdvertisementRemainingMs(startValue, endValue, now);
+  if (remainingMs === null) return "غير محدد";
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (part: number) => String(part).padStart(2, "0");
+  if (days > 0) return `${days} يوم ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+function formatAdvertisementExpiry(value?: string | null) {
+  if (!value) return "غير محدد";
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) return "غير محدد";
+  return expiry.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function AdvertisementExpiryMeta({ advertisement, compact = false }: { advertisement: PublicAdvertisement; compact?: boolean }) {
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    const updateNow = () => setNow(Date.now());
+    updateNow();
+    const tick = window.setInterval(updateNow, 1000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  const remainingMs = now === null ? null : getAdvertisementRemainingMs(advertisement.starts_at, advertisement.ends_at, now);
+  const remainingLabel = remainingMs === null ? "جارٍ التحديث..." : formatAdvertisementCountdown(advertisement.starts_at, advertisement.ends_at, now ?? 0);
+  const expiryLabel = formatAdvertisementExpiry(advertisement.ends_at);
+
+  if (compact) {
+    return (
+      <div
+        className="mt-2 rounded-2xl border border-[#d9c8a4] bg-gradient-to-br from-[#fffdf8] via-[#fffaf0] to-[#f7f1e5] p-2 shadow-[0_6px_18px_rgba(17,17,17,0.08)]"
+        style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}
+      >
+        <div className="flex items-center justify-between gap-2 rounded-xl bg-[#f5efe3] px-2 py-1.5 ring-1 ring-[#d9c8a4]">
+          <span className="text-[10px] font-black leading-5 tracking-[0.02em] text-[#0f172a]">متبقي حتى انتهاء الإعلان</span>
+          <span className="tabular-nums text-[10px] font-black leading-5 text-[#0f172a]">{remainingLabel}</span>
+        </div>
+        <div className="mt-1.5 text-[9px] font-extrabold leading-5 text-[#111827]">تاريخ انتهاء الإعلان: {expiryLabel}</div>
+        <div className="mt-0.5 text-[9px] font-extrabold leading-5 text-[#111827]">انتهاء السحب: {expiryLabel}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-3 rounded-[20px] border border-[#d9c8a4] bg-gradient-to-br from-[#fffdf8] via-[#fffaf0] to-[#f5efe3] p-3 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+      style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}
+    >
+      <div className="flex items-center justify-between gap-2 rounded-xl bg-[#f5efe3] px-2.5 py-2 ring-1 ring-[#d9c8a4]">
+        <span className="text-[11px] font-black leading-6 tracking-[0.02em] text-[#0f172a]">الوقت المتبقي حتى انتهاء الإعلان</span>
+        <span className="tabular-nums text-[11px] font-black leading-6 text-[#0f172a]">{remainingLabel}</span>
+      </div>
+      <div className="mt-2 text-[10px] font-extrabold leading-6 text-[#111827]">تاريخ انتهاء الإعلان: {expiryLabel}</div>
+      <div className="mt-1 text-[10px] font-extrabold leading-6 text-[#111827]">الوقت المتبقي حتى انتهاء السحب: {remainingLabel}</div>
+    </div>
+  );
 }
 
 function getItemUnitPrice(item: Item) {
@@ -340,7 +420,27 @@ export default function Home() {
 
   useEffect(() => {
     let closeTimer: number | undefined;
+    let reopenTimer: number | undefined;
     let cancelled = false;
+
+    const showFeaturedAdvertisement = (featuredAdvertisements: PublicAdvertisement[]) => {
+      if (cancelled || featuredAdvertisements.length === 0) return;
+
+      const savedIndex = Number(window.sessionStorage.getItem("featured_advertisement_index") || "0");
+      const nextIndex = savedIndex % featuredAdvertisements.length;
+      const featured = featuredAdvertisements[nextIndex];
+      const nextSequenceIndex = (nextIndex + 1) % featuredAdvertisements.length;
+      window.sessionStorage.setItem("featured_advertisement_index", String(nextSequenceIndex));
+
+      setFeaturedAdvertisement(featured);
+      closeTimer = window.setTimeout(() => {
+        setFeaturedAdvertisement(null);
+        reopenTimer = window.setTimeout(() => {
+          if (!cancelled) showFeaturedAdvertisement(featuredAdvertisements);
+        }, 1000);
+      }, 10000);
+    };
+
     fetch("/api/advertisements")
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
@@ -348,18 +448,16 @@ export default function Home() {
         const accepted = Array.isArray(data?.advertisements) ? data.advertisements : [];
         setAdvertisements(accepted);
         const featuredAdvertisements = accepted.filter((item: PublicAdvertisement) => item.featured);
-        const featured = featuredAdvertisements[Math.floor(Math.random() * featuredAdvertisements.length)];
-        const featuredAdvertisementShown = window.sessionStorage.getItem("featured_advertisement_shown");
-        if (featured && !featuredAdvertisementShown) {
-          window.sessionStorage.setItem("featured_advertisement_shown", "true");
-          setFeaturedAdvertisement(featured);
-          closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), 15000);
+        if (featuredAdvertisements.length > 0) {
+          showFeaturedAdvertisement(featuredAdvertisements);
         }
       })
       .catch(() => undefined);
+
     return () => {
       cancelled = true;
       if (closeTimer) window.clearTimeout(closeTimer);
+      if (reopenTimer) window.clearTimeout(reopenTimer);
     };
   }, []);
 
@@ -3279,6 +3377,7 @@ function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertis
                 </div>
                 <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
                 <p className="line-clamp-3 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
+                <AdvertisementExpiryMeta advertisement={advertisement} compact />
               </div>
             </div>
           );
@@ -3307,6 +3406,7 @@ function FeaturedAdvertisement({ advertisement }: { advertisement: PublicAdverti
         )}
         <div className="px-4 py-4 sm:px-5">
           <p className="line-clamp-3 text-sm leading-6 text-[#596963]">{advertisement.description}</p>
+          <AdvertisementExpiryMeta advertisement={advertisement} />
           <Link href={`/ads/${advertisement.id}`} className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md bg-[#c48738] px-5 text-sm font-bold text-white sm:w-auto">عرض ملف المعلن</Link>
         </div>
       </div>
