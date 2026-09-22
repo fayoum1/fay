@@ -420,26 +420,7 @@ export default function Home() {
 
   useEffect(() => {
     let closeTimer: number | undefined;
-    let reopenTimer: number | undefined;
     let cancelled = false;
-
-    const showFeaturedAdvertisement = (featuredAdvertisements: PublicAdvertisement[]) => {
-      if (cancelled || featuredAdvertisements.length === 0) return;
-
-      const savedIndex = Number(window.sessionStorage.getItem("featured_advertisement_index") || "0");
-      const nextIndex = savedIndex % featuredAdvertisements.length;
-      const featured = featuredAdvertisements[nextIndex];
-      const nextSequenceIndex = (nextIndex + 1) % featuredAdvertisements.length;
-      window.sessionStorage.setItem("featured_advertisement_index", String(nextSequenceIndex));
-
-      setFeaturedAdvertisement(featured);
-      closeTimer = window.setTimeout(() => {
-        setFeaturedAdvertisement(null);
-        reopenTimer = window.setTimeout(() => {
-          if (!cancelled) showFeaturedAdvertisement(featuredAdvertisements);
-        }, 1000);
-      }, 10000);
-    };
 
     fetch("/api/advertisements")
       .then((response) => (response.ok ? response.json() : null))
@@ -449,7 +430,13 @@ export default function Home() {
         setAdvertisements(accepted);
         const featuredAdvertisements = accepted.filter((item: PublicAdvertisement) => item.featured);
         if (featuredAdvertisements.length > 0) {
-          showFeaturedAdvertisement(featuredAdvertisements);
+          const alreadyShown = window.sessionStorage.getItem("featured_advertisement_shown");
+          if (alreadyShown === "true") return;
+
+          const featured = featuredAdvertisements[0];
+          window.sessionStorage.setItem("featured_advertisement_shown", "true");
+          setFeaturedAdvertisement(featured);
+          closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), 10000);
         }
       })
       .catch(() => undefined);
@@ -457,7 +444,6 @@ export default function Home() {
     return () => {
       cancelled = true;
       if (closeTimer) window.clearTimeout(closeTimer);
-      if (reopenTimer) window.clearTimeout(reopenTimer);
     };
   }, []);
 
