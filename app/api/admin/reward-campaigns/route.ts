@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: reason instanceof Error ? reason.message : "تعذر تسوية الحملات المنتهية" }, { status: 500 });
   }
   const [{ data: campaigns, error }, { data: advertisements, error: adsError }] = await Promise.all([
-    client.from("ad_reward_campaigns").select("*, advertisements(id,title)").order("created_at", { ascending: false }),
+    client.from("ad_reward_campaigns").select("*, advertisements(id,title), ad_reward_actions(id,action_type,reward_points,reward_amount,reward_label,required_seconds,max_rewards,enabled)").order("created_at", { ascending: false }),
     client.from("advertisements").select("id,title").order("created_at", { ascending: false }),
   ]);
   if (error || adsError) return NextResponse.json({ error: error?.message || adsError?.message }, { status: 500 });

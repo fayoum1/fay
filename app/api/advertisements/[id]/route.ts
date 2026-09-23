@@ -58,7 +58,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const rewardBadge = rewardCampaign?.reward_mode === "cash"
     ? `مكافأة نقدية = ${rewardAmount > 0 ? rewardAmount : Number(rewardCampaign.budget || 0)} جنيه`
     : rewardCampaign?.reward_mode === "discount"
-      ? primaryAction?.reward_label || "مكافأة خصم"
+      ? primaryAction?.reward_label || (Number(primaryAction?.reward_amount || 0) > 0 ? `خصم ${Number(primaryAction.reward_amount)}%` : "مكافأة خصم")
       : rewardCampaign?.reward_mode === "gift"
         ? primaryAction?.reward_label || "مكافأة هدية"
         : rewardPoints > 0 ? `مكافأة = ${rewardPoints} نقطة` : "مكافأة متاحة";

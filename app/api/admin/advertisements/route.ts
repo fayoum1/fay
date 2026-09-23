@@ -58,12 +58,20 @@ export async function PATCH(request: NextRequest) {
   }
   const startsAt = body.starts_at ? new Date(body.starts_at) : new Date();
   const endsAt = body.ends_at ? new Date(body.ends_at) : new Date(startsAt.getTime() + Number(advertisement.duration_days || 7) * 24 * 60 * 60 * 1000);
+  const targetAudience = ["all", "visitors", "customers", "staff", "admins", "sellers"].includes(body.target_audience) ? body.target_audience : undefined;
+  const displayOrder = Number(body.display_order);
   const update = {
     status,
     ...( ["غير مطلوب", "قيد الانتظار", "تم الدفع", "مرفوض"].includes(body.payment_status) ? { payment_status: body.payment_status } : {}),
     ...(typeof body.admin_note === "string" ? { admin_note: body.admin_note.trim().slice(0, 500) } : {}),
     ...(typeof body.featured === "boolean" ? { featured: body.featured } : {}),
+    ...(typeof body.reward_badge_enabled === "boolean" ? { reward_badge_enabled: body.reward_badge_enabled } : {}),
+    ...(targetAudience ? { target_audience: targetAudience } : {}),
+    ...(Number.isInteger(displayOrder) ? { display_order: displayOrder } : {}),
+    ...(body.starts_at ? { starts_at: startsAt.toISOString() } : {}),
+    ...(body.ends_at ? { ends_at: endsAt.toISOString() } : {}),
     ...(status === "مقبول" ? { starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString() } : {}),
+    ...(status !== "مقبول" ? { featured: false } : {}),
   };
   if (body.featured === true) {
     await client.from("advertisements").update({ featured: false }).neq("id", id);

@@ -101,9 +101,56 @@ type PublicAdvertisement = {
   whatsapp?: string | null;
   featured?: boolean;
   reward_badge?: string | null;
+  reward_badge_enabled?: boolean;
+  target_audience?: string | null;
+  display_order?: number | null;
   starts_at?: string | null;
   ends_at?: string | null;
 };
+
+type AdvertisementRotationMode = "scroll" | "carousel";
+type AdvertisementDisplaySettings = {
+  duration_seconds: number;
+  rotation_mode: AdvertisementRotationMode;
+  auto_play: boolean;
+  show_advertiser_name: boolean;
+  show_expiry: boolean;
+  show_reward_badge: boolean;
+  popup_enabled: boolean;
+  popup_duration_seconds: number;
+  popup_delay_seconds: number;
+  popup_frequency: "session" | "visit";
+};
+
+const defaultAdvertisementDisplaySettings: AdvertisementDisplaySettings = {
+  duration_seconds: 10,
+  rotation_mode: "scroll",
+  auto_play: true,
+  show_advertiser_name: true,
+  show_expiry: true,
+  show_reward_badge: true,
+  popup_enabled: true,
+  popup_duration_seconds: 10,
+  popup_delay_seconds: 0,
+  popup_frequency: "session",
+};
+
+function hydrateAdvertisementDisplaySettings(value?: Partial<SiteSettings>): AdvertisementDisplaySettings {
+  const duration = Number(value?.ad_display_duration_seconds ?? defaultAdvertisementDisplaySettings.duration_seconds);
+  const rotationMode = value?.ad_rotation_mode === "carousel" ? "carousel" : "scroll";
+  return {
+    duration_seconds: Number.isFinite(duration) && duration >= 5 ? duration : defaultAdvertisementDisplaySettings.duration_seconds,
+    rotation_mode: rotationMode,
+    auto_play: value?.ad_auto_play ?? defaultAdvertisementDisplaySettings.auto_play,
+    show_advertiser_name: value?.ad_show_advertiser_name ?? defaultAdvertisementDisplaySettings.show_advertiser_name,
+    show_expiry: value?.ad_show_expiry ?? defaultAdvertisementDisplaySettings.show_expiry,
+    show_reward_badge: value?.ad_show_reward_badge ?? defaultAdvertisementDisplaySettings.show_reward_badge,
+    popup_enabled: value?.ad_popup_enabled ?? defaultAdvertisementDisplaySettings.popup_enabled,
+    popup_duration_seconds: Number.isFinite(Number(value?.ad_popup_duration_seconds)) && Number(value?.ad_popup_duration_seconds) >= 5 ? Math.min(Number(value?.ad_popup_duration_seconds), 60) : defaultAdvertisementDisplaySettings.popup_duration_seconds,
+    popup_delay_seconds: Number.isFinite(Number(value?.ad_popup_delay_seconds)) && Number(value?.ad_popup_delay_seconds) >= 0 ? Math.min(Number(value?.ad_popup_delay_seconds), 30) : defaultAdvertisementDisplaySettings.popup_delay_seconds,
+    popup_frequency: value?.ad_popup_frequency === "visit" ? "visit" : "session",
+  };
+}
 type MarketTrader = { id: number; display_name: string; phone: string; receive_offers: boolean };
 const orderStatuses: OrderStatus[] = [
   "حجز مؤكد",
@@ -136,6 +183,16 @@ type SiteSettings = {
   milestone_count: number;
   milestone_reward: number;
   show_target_to_staff: boolean;
+  ad_display_duration_seconds?: number;
+  ad_rotation_mode?: AdvertisementRotationMode;
+  ad_auto_play?: boolean;
+  ad_show_advertiser_name?: boolean;
+  ad_show_expiry?: boolean;
+  ad_show_reward_badge?: boolean;
+  ad_popup_enabled?: boolean;
+  ad_popup_duration_seconds?: number;
+  ad_popup_delay_seconds?: number;
+  ad_popup_frequency?: "session" | "visit";
   reward_rate_history?: RewardRate[];
 };
 
@@ -154,6 +211,16 @@ const defaultSettings: SiteSettings = {
   milestone_count: 1,
   milestone_reward: 1,
   show_target_to_staff: true,
+  ad_display_duration_seconds: 10,
+  ad_rotation_mode: "scroll",
+  ad_auto_play: true,
+  ad_show_advertiser_name: true,
+  ad_show_expiry: true,
+  ad_show_reward_badge: true,
+  ad_popup_enabled: true,
+  ad_popup_duration_seconds: 10,
+  ad_popup_delay_seconds: 0,
+  ad_popup_frequency: "session",
 };
 const defaultCategories: string[] = [];
 const itemAvailabilityStatuses: ItemAvailabilityStatus[] = [
@@ -257,7 +324,8 @@ function AdvertisementExpiryMeta({ advertisement, compact = false }: { advertise
 
   if (compact) {
     return (
-      <div className="mt-2 flex items-center justify-center rounded-lg bg-[#f5efe3] px-2 py-1 text-[10px] font-black text-[#111827]" style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}>
+      <div className="mt-2 rounded-lg border border-[#e9dcc0] bg-[#f5efe3] px-2.5 py-1.5 text-center text-[10px] font-black text-[#111827]" style={{ fontFamily: '"Noto Sans Arabic", "Tahoma", "Segoe UI", sans-serif' }}>
+        <span className="text-[9px] font-bold text-[#7a6954]">الوقت المتبقي: </span>
         <span className="tabular-nums text-[#111827]">{remainingLabel}</span>
       </div>
     );
@@ -338,8 +406,6 @@ export default function Home() {
   const [phone, setPhone] = useState("");
   const [governorate, setGovernorate] = useState("الفيوم");
   const [district, setDistrict] = useState("");
-  const [query, setQuery] = useState("");
-  const [showItemSearch, setShowItemSearch] = useState(false);
   const [orderSearch, setOrderSearch] = useState("");
   const [category, setCategory] = useState("الكل");
   const [cart, setCart] = useState<Record<number, number>>({});
@@ -364,8 +430,33 @@ export default function Home() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [printEmployeeName, setPrintEmployeeName] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
+  const [adDisplaySettings, setAdDisplaySettings] = useState<AdvertisementDisplaySettings>(defaultAdvertisementDisplaySettings);
   const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [categoryOptions, setCategoryOptions] = useState(defaultCategories);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("ad-display-settings");
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as Partial<AdvertisementDisplaySettings>;
+      setAdDisplaySettings({
+        ...defaultAdvertisementDisplaySettings,
+        ...parsed,
+      });
+    } catch {
+      // ignore invalid saved settings
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("ad-display-settings", JSON.stringify(adDisplaySettings));
+  }, [adDisplaySettings]);
+
+  useEffect(() => {
+    if (settings.ad_display_duration_seconds !== undefined || settings.ad_rotation_mode !== undefined || settings.ad_auto_play !== undefined || settings.ad_show_advertiser_name !== undefined || settings.ad_show_expiry !== undefined || settings.ad_show_reward_badge !== undefined) {
+      setAdDisplaySettings(hydrateAdvertisementDisplaySettings(settings));
+    }
+  }, [settings]);
   const [todayOrdersCount, setTodayOrdersCount] = useState(0);
   const [confirmedOrdersCount, setConfirmedOrdersCount] = useState(0);
   const [ordersDialog, setOrdersDialog] = useState<"today" | "confirmed" | null>(null);
@@ -407,37 +498,41 @@ export default function Home() {
 
   useEffect(() => {
     let closeTimer: number | undefined;
+    let openTimer: number | undefined;
     let cancelled = false;
 
-    fetch("/api/advertisements")
+    fetch("/api/advertisements", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return;
         const accepted = Array.isArray(data?.advertisements) ? data.advertisements : [];
         setAdvertisements(accepted);
         const featuredAdvertisements = accepted.filter((item: PublicAdvertisement) => item.featured);
-        if (featuredAdvertisements.length > 0) {
-          const alreadyShown = window.sessionStorage.getItem("featured_advertisement_shown");
+        if (featuredAdvertisements.length > 0 && adDisplaySettings.popup_enabled) {
+          const storage = adDisplaySettings.popup_frequency === "visit" ? window.sessionStorage : window.localStorage;
+          const alreadyShown = storage.getItem("featured_advertisement_shown");
           if (alreadyShown === "true") return;
 
           const featured = featuredAdvertisements[0];
-          window.sessionStorage.setItem("featured_advertisement_shown", "true");
-          setFeaturedAdvertisement(featured);
-          closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), 10000);
+          storage.setItem("featured_advertisement_shown", "true");
+          openTimer = window.setTimeout(() => {
+            if (cancelled) return;
+            setFeaturedAdvertisement(featured);
+            closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), adDisplaySettings.popup_duration_seconds * 1000);
+          }, adDisplaySettings.popup_delay_seconds * 1000);
         }
       })
       .catch(() => undefined);
 
     return () => {
       cancelled = true;
+      if (openTimer) window.clearTimeout(openTimer);
       if (closeTimer) window.clearTimeout(closeTimer);
     };
-  }, []);
+  }, [adDisplaySettings.popup_delay_seconds, adDisplaySettings.popup_duration_seconds, adDisplaySettings.popup_enabled, adDisplaySettings.popup_frequency]);
 
   const filteredItems = menuItems.filter(
-    (item) =>
-      (category === "الكل" || item.category === category) &&
-      item.name.includes(query),
+    (item) => category === "الكل" || item.category === category,
   );
   const cartItems = Object.entries(cart)
     .filter(([, quantity]) => quantity > 0)
@@ -696,7 +791,9 @@ export default function Home() {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (data) {
-          setSettings({ ...defaultSettings, ...data });
+          const nextSettings = { ...defaultSettings, ...data } as SiteSettings;
+          setSettings(nextSettings);
+          setAdDisplaySettings(hydrateAdvertisementDisplaySettings(nextSettings));
           if (data.staff_name) setStaffNameInput(data.staff_name);
         }
       })
@@ -1605,41 +1702,16 @@ export default function Home() {
       {view === "cashier" ? (
         <div className="mx-auto grid w-full min-w-0 max-w-[1440px] gap-5 overflow-x-hidden px-3 py-5 sm:gap-8 sm:px-5 sm:py-8 lg:grid-cols-[1fr_380px] lg:px-10">
           <section className="min-w-0 max-w-full overflow-x-hidden">
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
-                {showItemSearch ? (
-                  <div className="relative min-w-0 flex-1">
-                    <Search
-                      className="absolute right-4 top-3.5 text-[#9ca49d]"
-                      size={18}
-                    />
-                    <input
-                      autoFocus
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="ابحث عن صنف..."
-                      className="h-12 w-full rounded-xl border border-[#dedfd8] bg-white pr-11 pl-4 text-sm outline-none transition focus:border-[#173f3a]"
-                    />
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setShowItemSearch(true)}
-                    aria-label="فتح البحث عن صنف"
-                    title="بحث عن صنف"
-                    className="grid size-12 shrink-0 place-items-center rounded-xl border border-[#dedfd8] bg-white text-[#72807a] transition hover:border-[#173f3a] hover:text-[#173f3a] max-[359px]:hidden"
-                  >
-                    <Search size={19} />
-                  </button>
-                )}
-                {!showItemSearch && settings.visitor_message && (
+                {settings.visitor_message && (
                   <div className="h-12 min-w-0 flex-1 overflow-hidden rounded-xl border border-[#dedfd8] bg-white text-[#173f3a]" aria-label="رسالة للزوار">
                     <div className="visitor-message-ticker flex h-full w-max items-center whitespace-nowrap px-4 text-sm font-bold">
                       {settings.visitor_message}
                     </div>
                   </div>
                 )}
-                {!showItemSearch && (settings.facebook_url || settings.instagram_url || settings.whatsapp_url) && (
+                {(settings.facebook_url || settings.instagram_url || settings.whatsapp_url) && (
                   <div className="flex shrink-0 items-center gap-1">
                     {settings.facebook_url && (
                       <a href={settings.facebook_url} target="_blank" rel="noreferrer" aria-label="فيسبوك" title="فيسبوك" className="grid size-9 place-items-center rounded-lg bg-[#1877f2] text-white transition hover:opacity-85 max-[359px]:size-7">
@@ -1659,7 +1731,7 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <div className="sticky top-[78px] z-20 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-b border-[#dedfd8] bg-[#f7f6f2] px-0 pb-1 pt-2 shadow-sm [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
+              <div className="sticky top-[78px] z-20 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-b border-[#dedfd8] bg-[#f7f6f2] px-0 pb-0.5 pt-1 shadow-sm [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
                 <div className="flex w-max min-w-full flex-nowrap gap-2">
                 <button
                   type="button"
@@ -1693,7 +1765,7 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            {advertisements.length > 0 && <AdvertisementStrip advertisements={advertisements} />}
+            {advertisements.length > 0 && <AdvertisementStrip advertisements={advertisements} config={adDisplaySettings} />}
             <div className="grid min-w-0 gap-3 pr-1">
               {filteredItems.map((item) => (
                 <article
@@ -2138,7 +2210,7 @@ export default function Home() {
           ) : adminTab === "users" && userRole === "admin" ? (
             <UsersManager />
           ) : adminTab === "advertisements" && userRole === "admin" ? (
-            <div className="grid gap-5"><AdminAdvertisementsWorkspace /><RewardCampaignManager /></div>
+            <div className="grid gap-5"><AdminAdvertisementsWorkspace value={adDisplaySettings} onChange={setAdDisplaySettings} /><RewardCampaignManager /></div>
           ) : adminTab === "targets" && userRole === "admin" ? (
             <TargetsManager orders={orders} settings={settings} />
           ) : adminTab === "targets" && userRole === "staff" ? (
@@ -3343,28 +3415,109 @@ function MarketingManager({
   );
 }
 
-function AdvertisementStrip({ advertisements }: { advertisements: PublicAdvertisement[] }) {
+function AdvertisementStrip({ advertisements, config }: { advertisements: PublicAdvertisement[]; config: AdvertisementDisplaySettings }) {
+  const isManualMode = config.rotation_mode === "carousel";
+  const animationDuration = `${Math.max(config.duration_seconds, 5)}s`;
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (!isManualMode || !config.auto_play || advertisements.length < 2) return;
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % advertisements.length);
+    }, config.duration_seconds * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [advertisements.length, config.auto_play, config.duration_seconds, isManualMode]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [advertisements.length]);
+
+  const goToPrevious = () => {
+    if (!advertisements.length) return;
+    setActiveIndex((current) => (current - 1 + advertisements.length) % advertisements.length);
+  };
+
+  const goToNext = () => {
+    if (!advertisements.length) return;
+    setActiveIndex((current) => (current + 1) % advertisements.length);
+  };
+
+  if (!advertisements.length) return null;
+
   return (
     <div className="my-2 overflow-hidden" aria-label="الإعلانات المقبولة">
-      <div className="advertisement-strip flex w-max min-w-full items-center gap-3">
-        {advertisements.map((advertisement) => {
-          const content = (
-            <div className="grid h-[158px] w-[min(96vw,600px)] shrink-0 grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
-              {advertisement.media_type === "video" && advertisement.video_url ? <video src={advertisement.video_url} muted autoPlay loop playsInline className="h-[138px] w-[190px] rounded-md bg-[#eef0ea] object-cover" /> : advertisement.image_url ? <img src={advertisement.image_url} alt="" className="h-[138px] w-[190px] rounded-md bg-[#eef0ea] object-cover" /> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
-                  {advertisement.reward_badge && <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-xs font-black text-white shadow-sm">{advertisement.reward_badge}</span>}
-                </div>
-                <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
-                <p className="line-clamp-3 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
-                <AdvertisementExpiryMeta advertisement={advertisement} compact />
+      {isManualMode && advertisements.length > 1 && (
+        <div className="mb-2 flex items-center justify-end gap-2 px-1">
+          <button type="button" onClick={goToPrevious} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">السابق</button>
+          <button type="button" onClick={goToNext} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">التالي</button>
+        </div>
+      )}
+
+      {isManualMode ? (
+        <div className="relative overflow-hidden rounded-md border border-[#dfe5dc] bg-[#f5f7f4] p-1">
+          <div
+            className="flex transition-transform duration-500 ease-out"
+            style={{ transform: `translateX(-${activeIndex * 100}%)` }}
+          >
+            {advertisements.map((advertisement) => (
+              <div key={advertisement.id} className="w-full shrink-0 px-0.5">
+                <Link href={`/ads/${advertisement.id}`}>
+                  <div className="grid h-[158px] w-full grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
+                    {advertisement.media_type === "video" && advertisement.video_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><video src={advertisement.video_url} muted autoPlay loop playsInline className="max-h-full max-w-full object-contain" /></div> : advertisement.image_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><img src={advertisement.image_url} alt="" className="max-h-full max-w-full object-contain" /></div> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <p className="shrink-0 text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
+                        {config.show_advertiser_name && (
+                          <p className="min-w-0 truncate text-[9px] font-bold text-[#72807a]">{advertisement.advertiser_name}</p>
+                        )}
+                      </div>
+                      <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
+                      {config.show_reward_badge && advertisement.reward_badge && (
+                        <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
+                          {advertisement.reward_badge}
+                        </span>
+                      )}
+                      <p className="line-clamp-1 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
+                      {config.show_expiry && <AdvertisementExpiryMeta advertisement={advertisement} compact />}
+                    </div>
+                  </div>
+                </Link>
               </div>
-            </div>
-          );
-          return <Link key={advertisement.id} href={`/ads/${advertisement.id}`}>{content}</Link>;
-        })}
-      </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div
+          className="advertisement-strip flex w-max min-w-full items-center gap-3"
+          style={{ animationDuration, animationPlayState: config.auto_play ? "running" : "paused" }}
+        >
+          {advertisements.map((advertisement) => {
+            const content = (
+              <div className="grid h-[158px] w-[min(96vw,600px)] shrink-0 grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
+                {advertisement.media_type === "video" && advertisement.video_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><video src={advertisement.video_url} muted autoPlay loop playsInline className="max-h-full max-w-full object-contain" /></div> : advertisement.image_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><img src={advertisement.image_url} alt="" className="max-h-full max-w-full object-contain" /></div> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
+                <div className="min-w-0 space-y-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="shrink-0 text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
+                    {config.show_advertiser_name && (
+                      <p className="min-w-0 truncate text-[9px] font-bold text-[#72807a]">{advertisement.advertiser_name}</p>
+                    )}
+                  </div>
+                  <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
+                  {config.show_reward_badge && advertisement.reward_badge && (
+                    <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
+                      {advertisement.reward_badge}
+                    </span>
+                  )}
+                  <p className="line-clamp-1 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
+                  {config.show_expiry && <AdvertisementExpiryMeta advertisement={advertisement} compact />}
+                </div>
+              </div>
+            );
+            return <Link key={advertisement.id} href={`/ads/${advertisement.id}`}>{content}</Link>;
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -3394,12 +3547,168 @@ function FeaturedAdvertisement({ advertisement }: { advertisement: PublicAdverti
   );
 }
 
+function AdvertisementDisplayControls({ value, onChange }: { value: AdvertisementDisplaySettings; onChange: (next: AdvertisementDisplaySettings) => void }) {
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const updateField = <K extends keyof AdvertisementDisplaySettings>(field: K, nextValue: AdvertisementDisplaySettings[K]) => {
+    onChange({ ...value, [field]: nextValue });
+  };
+
+  const saveSettings = async () => {
+    setSaving(true);
+    setSaveMessage("");
+    const formData = new FormData();
+    formData.set("ad_display_duration_seconds", String(value.duration_seconds));
+    formData.set("ad_rotation_mode", value.rotation_mode);
+    formData.set("ad_auto_play", String(value.auto_play));
+    formData.set("ad_show_advertiser_name", String(value.show_advertiser_name));
+    formData.set("ad_show_expiry", String(value.show_expiry));
+    formData.set("ad_show_reward_badge", String(value.show_reward_badge));
+    formData.set("ad_popup_enabled", String(value.popup_enabled));
+    formData.set("ad_popup_duration_seconds", String(value.popup_duration_seconds));
+    formData.set("ad_popup_delay_seconds", String(value.popup_delay_seconds));
+    formData.set("ad_popup_frequency", value.popup_frequency);
+    const response = await fetch("/api/settings", { method: "PATCH", body: formData });
+    const result = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok) {
+      setSaveMessage(result.error || "تعذر حفظ إعدادات الإعلانات");
+      return;
+    }
+    setSaveMessage("تم حفظ إعدادات العرض");
+  };
+
+  return (
+    <section className="mb-5 rounded-xl border border-[#dfe4dc] bg-[#f8faf7] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold text-[#b2762d]">إعدادات العرض</p>
+          <h3 className="font-display text-xl font-bold text-[#173f3a]">طريقة التمرير والإظهار</h3>
+        </div>
+        <button
+          type="button"
+          onClick={() => void saveSettings()}
+          disabled={saving}
+          className="h-10 rounded-md bg-[#173f3a] px-4 text-xs font-bold text-white disabled:cursor-wait disabled:opacity-60"
+        >
+          {saving ? "جارٍ الحفظ..." : "حفظ الإعدادات"}
+        </button>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <label className="grid gap-1 text-xs font-bold text-[#596963]">
+          مدة عرض كل إعلان (ثانية)
+          <input
+            type="number"
+            min={5}
+            max={60}
+            value={value.duration_seconds}
+            onChange={(event) => updateField("duration_seconds", Math.min(60, Math.max(5, Number(event.target.value) || 5)))}
+            className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-bold text-[#596963]">
+          طريقة العرض
+          <select
+            value={value.rotation_mode}
+            onChange={(event) => updateField("rotation_mode", event.target.value as AdvertisementRotationMode)}
+            className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
+          >
+            <option value="scroll">تمرير مستمر</option>
+            <option value="carousel">كروت قابلة للتمرير</option>
+          </select>
+        </label>
+        <label className="flex items-center justify-between rounded-md border border-[#d9ded7] bg-white px-3 py-2 text-xs font-bold text-[#596963]">
+          التشغيل التلقائي
+          <input
+            type="checkbox"
+            checked={value.auto_play}
+            onChange={(event) => updateField("auto_play", event.target.checked)}
+            className="size-4 accent-[#173f3a]"
+          />
+        </label>
+        <label className="flex items-center justify-between rounded-md border border-[#d9ded7] bg-white px-3 py-2 text-xs font-bold text-[#596963]">
+          إظهار اسم المعلن
+          <input
+            type="checkbox"
+            checked={value.show_advertiser_name}
+            onChange={(event) => updateField("show_advertiser_name", event.target.checked)}
+            className="size-4 accent-[#173f3a]"
+          />
+        </label>
+        <label className="flex items-center justify-between rounded-md border border-[#d9ded7] bg-white px-3 py-2 text-xs font-bold text-[#596963]">
+          إظهار مدة انتهاء الإعلان
+          <input
+            type="checkbox"
+            checked={value.show_expiry}
+            onChange={(event) => updateField("show_expiry", event.target.checked)}
+            className="size-4 accent-[#173f3a]"
+          />
+        </label>
+        <label className="flex items-center justify-between rounded-md border border-[#d9ded7] bg-white px-3 py-2 text-xs font-bold text-[#596963]">
+          إظهار شارة المكافأة
+          <input
+            type="checkbox"
+            checked={value.show_reward_badge}
+            onChange={(event) => updateField("show_reward_badge", event.target.checked)}
+            className="size-4 accent-[#173f3a]"
+          />
+        </label>
+        <label className="flex items-center justify-between rounded-md border border-[#d9ded7] bg-white px-3 py-2 text-xs font-bold text-[#596963]">
+          تفعيل الإعلان المنبثق
+          <input
+            type="checkbox"
+            checked={value.popup_enabled}
+            onChange={(event) => updateField("popup_enabled", event.target.checked)}
+            className="size-4 accent-[#173f3a]"
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-bold text-[#596963]">
+          مدة الإعلان المنبثق (ثانية)
+          <input
+            type="number"
+            min={5}
+            max={60}
+            value={value.popup_duration_seconds}
+            onChange={(event) => updateField("popup_duration_seconds", Math.min(60, Math.max(5, Number(event.target.value) || 5)))}
+            className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-bold text-[#596963]">
+          تأخير ظهور الإعلان (ثانية)
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={value.popup_delay_seconds}
+            onChange={(event) => updateField("popup_delay_seconds", Math.min(30, Math.max(0, Number(event.target.value) || 0)))}
+            className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
+          />
+        </label>
+        <label className="grid gap-1 text-xs font-bold text-[#596963]">
+          تكرار الإعلان المنبثق
+          <select
+            value={value.popup_frequency}
+            onChange={(event) => updateField("popup_frequency", event.target.value as "session" | "visit")}
+            className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
+          >
+            <option value="session">مرة واحدة في الجلسة</option>
+            <option value="visit">مرة واحدة لهذا الجهاز</option>
+          </select>
+        </label>
+      </div>
+      {saveMessage && <p className="mt-3 text-xs font-bold text-[#39704f]">{saveMessage}</p>}
+    </section>
+  );
+}
+
 type AdminAdvertisement = PublicAdvertisement & {
   status: string;
   admin_note?: string | null;
   payment_status: string;
   featured: boolean;
   price: number;
+  target_audience?: string | null;
+  display_order?: number | null;
   views?: number;
   clicks?: number;
   likes?: number;
@@ -3413,7 +3722,7 @@ type AdvertisementPackage = {
   active: boolean;
 };
 
-function AdminAdvertisementsWorkspace() {
+function AdminAdvertisementsWorkspace({ value, onChange }: { value: AdvertisementDisplaySettings; onChange: (next: AdvertisementDisplaySettings) => void }) {
   const [advertisements, setAdvertisements] = useState<AdminAdvertisement[]>([]);
   const [packages, setPackages] = useState<AdvertisementPackage[]>([]);
   const [notes, setNotes] = useState<Record<number, string>>({});
@@ -3452,6 +3761,9 @@ function AdminAdvertisementsWorkspace() {
         status: changes.status || advertisement.status,
         payment_status: changes.payment_status || advertisement.payment_status,
         featured: changes.featured ?? advertisement.featured,
+        reward_badge_enabled: changes.reward_badge_enabled ?? advertisement.reward_badge_enabled ?? true,
+        target_audience: changes.target_audience ?? advertisement.target_audience ?? "all",
+        display_order: changes.display_order ?? advertisement.display_order ?? 0,
         admin_note: notes[advertisement.id] ?? advertisement.admin_note ?? "",
       }),
     });
@@ -3539,6 +3851,7 @@ function AdminAdvertisementsWorkspace() {
       </div>
 
       <div className="p-4 sm:p-6">
+        <AdvertisementDisplayControls value={value} onChange={onChange} />
         <div className="mb-4 flex flex-col gap-3 border-b border-[#e7eae5] pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-sm">
             <Search className="absolute right-3 top-3 text-[#87918d]" size={17} />
@@ -3583,7 +3896,7 @@ function AdminAdvertisementsWorkspace() {
                     <span><strong className="block text-base text-[#173f3a]">{advertisement.likes || 0}</strong><small className="text-[#7c8782]">إعجاب</small></span>
                   </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[170px_170px_minmax(220px,1fr)]">
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[170px_170px_180px_150px_190px_minmax(220px,1fr)]">
                     <label className="grid gap-1 text-xs font-bold text-[#596963]">حالة الدفع
                       <select value={advertisement.payment_status} onChange={(event) => void updateAdvertisement(advertisement, { payment_status: event.target.value })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 font-normal">
                         <option>غير مطلوب</option><option>قيد الانتظار</option><option>تم الدفع</option><option>مرفوض</option>
@@ -3593,6 +3906,28 @@ function AdminAdvertisementsWorkspace() {
                       <select value={advertisement.status} onChange={(event) => void updateAdvertisement(advertisement, { status: event.target.value })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 font-normal">
                         <option>قيد المراجعة</option><option>مقبول</option><option>متوقف</option><option>مرفوض</option><option>منتهي</option>
                       </select>
+                    </label>
+                    <label className="flex h-10 items-center justify-between gap-2 rounded-md border border-[#d9ded7] bg-white px-3 text-xs font-bold text-[#596963]">
+                      إظهار شارة المكافأة
+                      <input
+                        type="checkbox"
+                        checked={advertisement.reward_badge_enabled !== false}
+                        onChange={(event) => void updateAdvertisement(advertisement, { reward_badge_enabled: event.target.checked })}
+                        className="size-4 accent-[#173f3a]"
+                      />
+                    </label>
+                    <label className="grid gap-1 text-xs font-bold text-[#596963]">الجمهور المستهدف
+                      <select value={advertisement.target_audience || "all"} onChange={(event) => void updateAdvertisement(advertisement, { target_audience: event.target.value })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-2 font-normal">
+                        <option value="all">الجميع</option>
+                        <option value="visitors">الزوار</option>
+                        <option value="customers">العملاء</option>
+                        <option value="staff">الموظفون</option>
+                        <option value="admins">الأدمن</option>
+                        <option value="sellers">البائعون</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs font-bold text-[#596963]">ترتيب العرض
+                      <input type="number" min="0" value={advertisement.display_order ?? 0} onChange={(event) => void updateAdvertisement(advertisement, { display_order: Math.max(0, Math.floor(Number(event.target.value) || 0)) })} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 font-normal" />
                     </label>
                     <label className="grid gap-1 text-xs font-bold text-[#596963]">ملاحظة للمعلن
                       <input value={notes[advertisement.id] ?? advertisement.admin_note ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [advertisement.id]: event.target.value }))} onBlur={() => void updateAdvertisement(advertisement, {})} placeholder="سبب الرفض أو ملاحظة المراجعة" className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 font-normal outline-none focus:border-[#39704f]" />
@@ -3756,7 +4091,7 @@ type RewardCampaignStats = {
 };
 
 function RewardCampaignManager() {
-  const [campaigns, setCampaigns] = useState<Array<{ id: number; advertisement_id: number; name: string; reward_mode: string; budget: number; max_recipients: number | null; per_user_limit: number; status: string; advertisements?: { title?: string }; stats?: RewardCampaignStats }>>([]);
+  const [campaigns, setCampaigns] = useState<Array<{ id: number; advertisement_id: number; name: string; reward_mode: string; budget: number; max_recipients: number | null; per_user_limit: number; status: string; advertisements?: { title?: string }; ad_reward_actions?: Array<{ id: number; action_type: string; reward_points: number; reward_amount: number; reward_label?: string | null; required_seconds?: number | null; max_rewards?: number | null; enabled: boolean }>; stats?: RewardCampaignStats }>>([]);
   const [advertisements, setAdvertisements] = useState<Array<{ id: number; title: string }>>([]);
   const [draft, setDraft] = useState({ advertisement_id: "", name: "", reward_mode: "points", budget: "0", max_recipients: "", per_user_limit: "1", action_type: "referral", reward_points: "1", reward_amount: "0", required_seconds: "" });
   const [message, setMessage] = useState("");
@@ -3795,6 +4130,35 @@ function RewardCampaignManager() {
   const changeStatus = async (id: number, status: string) => {
     const response = await fetch("/api/admin/reward-campaigns", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
     if (!response.ok) return setMessage("تعذر تغيير حالة الحملة");
+    await load();
+  };
+
+  const changeCampaignMode = async (id: number, reward_mode: string) => {
+    const response = await fetch("/api/admin/reward-campaigns", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, reward_mode }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تغيير نوع المكافأة");
+    await load();
+  };
+
+  const changeCampaignAction = async (campaign: (typeof campaigns)[number], changes: { reward_amount?: number; reward_label?: string }) => {
+    const action = campaign.ad_reward_actions?.find((item) => item.enabled) || campaign.ad_reward_actions?.[0];
+    if (!action) return setMessage("لا يوجد إجراء مكافأة لتعديله");
+    const response = await fetch("/api/admin/reward-campaigns", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        campaign_id: campaign.id,
+        action_type: action.action_type,
+        reward_points: action.reward_points,
+        reward_amount: changes.reward_amount ?? action.reward_amount,
+        reward_label: changes.reward_label ?? action.reward_label ?? "",
+        required_seconds: action.required_seconds ?? "",
+        max_rewards: action.max_rewards ?? "",
+        enabled: action.enabled,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تعديل نص المكافأة");
     await load();
   };
 
@@ -3842,7 +4206,7 @@ function RewardCampaignManager() {
     <section className="reward-campaign-manager rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
       <div className="mb-4"><p className="text-sm font-semibold text-[#c48738]">مراجعة حملات المعلنين</p><h2 className="font-display text-xl font-bold text-[#173f3a]">حملات المكافآت</h2><p className="mt-1 text-xs leading-5 text-[#72807a]">ينشئ المعلن حملته مع إعلانه، ودور الإدارة مراجعتها وتفعيلها أو إيقافها فقط.</p></div>
       <form onSubmit={createCampaign} className="grid gap-2 rounded-xl bg-[#f7faf6] p-3 sm:grid-cols-[1fr_1.2fr_120px_120px_120px_120px_120px_120px_auto]"><select required value={draft.advertisement_id} onChange={(event) => setDraft({ ...draft, advertisement_id: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="">اختر الإعلان</option>{advertisements.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><input required value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="اسم الحملة" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><select value={draft.reward_mode} onChange={(event) => setDraft({ ...draft, reward_mode: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="points">نقاط</option><option value="discount">خصم</option><option value="gift">هدية</option><option value="cash">نقدي معلق</option></select><select value={draft.action_type} onChange={(event) => setDraft({ ...draft, action_type: event.target.value })} className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs"><option value="referral">إحالة</option><option value="view">مشاهدة</option><option value="like">إعجاب</option><option value="share">مشاركة</option></select><input required type="number" min="0" value={draft.reward_points} onChange={(event) => setDraft({ ...draft, reward_points: event.target.value })} placeholder="النقاط" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input required type="number" min="0" step="0.01" value={draft.reward_amount} onChange={(event) => setDraft({ ...draft, reward_amount: event.target.value })} placeholder="المبلغ" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input required type="number" min="0" step="1" value={draft.budget} onChange={(event) => setDraft({ ...draft, budget: event.target.value })} placeholder="الميزانية" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><input type="number" min="1" value={draft.max_recipients} onChange={(event) => setDraft({ ...draft, max_recipients: event.target.value })} placeholder="عدد المستفيدين" className="h-10 rounded-lg border border-[#dedfd8] bg-white px-2 text-xs" /><button className="h-10 rounded-lg bg-[#173f3a] px-3 text-xs font-bold text-white">إنشاء</button></form>
-      <div className="mt-4 grid gap-2">{campaigns.map((campaign) => <div key={campaign.id} className="rounded-xl border border-[#e7e7df] bg-white p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_110px_150px_auto]"><div><p className="text-sm font-bold text-[#173f3a]">{campaign.name}</p><p className="text-xs text-[#72807a]">{campaign.advertisements?.title || `إعلان #${campaign.advertisement_id}`} | ميزانية {campaign.budget}</p></div><span className="grid place-items-center text-xs font-bold text-[#c48738]">{campaign.reward_mode}</span><span className="grid place-items-center text-xs font-bold text-[#596963]">{campaign.status}</span><span className="grid place-items-center text-xs text-[#72807a]">حد المستفيدين: {campaign.max_recipients || "مفتوح"}</span><select value={campaign.status} onChange={(event) => void changeStatus(campaign.id, event.target.value)} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option value="draft">مسودة</option><option value="active">تفعيل</option><option value="paused">إيقاف مؤقت</option><option value="completed">مكتملة</option><option value="closed">إغلاق</option></select></div>{campaign.stats && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#eef0ea] pt-3 text-center text-xs sm:grid-cols-3 lg:grid-cols-6"><span><strong className="block text-[#173f3a]">{campaign.stats.participant_count}</strong><span className="text-[#72807a]">الأشخاص</span></span><span><strong className="block text-[#173f3a]">{campaign.stats.interaction_count}</strong><span className="text-[#72807a]">تفاعل مؤهل</span></span><span><strong className="block text-[#c48738]">{campaign.stats.current_entitlement} جنيه</strong><span className="text-[#72807a]">المستحق الحالي</span></span><span><strong className="block text-[#596963]">{campaign.stats.pending_amount} جنيه / {campaign.stats.pending_points} نقطة</strong><span className="text-[#72807a]">معلّق</span></span><span><strong className="block text-[#39704f]">{campaign.stats.approved_amount} جنيه / {campaign.stats.approved_points} نقطة</strong><span className="text-[#72807a]">معتمد</span></span>{campaign.stats.estimated_share !== null && <span><strong className="block text-[#a9584d]">{campaign.stats.estimated_share} جنيه</strong><span className="text-[#72807a]">النصيب التقديري للتفاعل</span></span>}</div>}</div>)}{!campaigns.length && <p className="py-6 text-center text-sm text-[#89918c]">لا توجد حملات مكافآت.</p>}</div>
+      <div className="mt-4 grid gap-2">{campaigns.map((campaign) => { const action = campaign.ad_reward_actions?.find((item) => item.enabled) || campaign.ad_reward_actions?.[0]; return <div key={campaign.id} className="rounded-xl border border-[#e7e7df] bg-white p-3"><div className="grid gap-2 sm:grid-cols-[1fr_130px_110px_150px_auto]"><div><p className="text-sm font-bold text-[#173f3a]">{campaign.name}</p><p className="text-xs text-[#72807a]">{campaign.advertisements?.title || `إعلان #${campaign.advertisement_id}`} | ميزانية {campaign.budget}</p></div><select value={campaign.reward_mode} onChange={(event) => void changeCampaignMode(campaign.id, event.target.value)} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option value="points">نقاط</option><option value="discount">خصم</option><option value="gift">هدية</option><option value="cash">نقدية</option></select><span className="grid place-items-center text-xs font-bold text-[#596963]">{campaign.status}</span><span className="grid place-items-center text-xs text-[#72807a]">حد المستفيدين: {campaign.max_recipients || "مفتوح"}</span><select value={campaign.status} onChange={(event) => void changeStatus(campaign.id, event.target.value)} className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs"><option value="draft">مسودة</option><option value="active">تفعيل</option><option value="paused">إيقاف مؤقت</option><option value="completed">مكتملة</option><option value="closed">إغلاق</option></select></div>{action && <div className="mt-3 grid gap-2 border-t border-[#eef0ea] pt-3 sm:grid-cols-[150px_1fr_auto]"><input type="number" min="0" step="0.01" value={action.reward_amount} onChange={(event) => { const amount = Number(event.target.value) || 0; setCampaigns((current) => current.map((item) => item.id === campaign.id ? { ...item, ad_reward_actions: item.ad_reward_actions?.map((entry) => entry.id === action.id ? { ...entry, reward_amount: amount } : entry) } : item)); }} onBlur={() => void changeCampaignAction(campaign, { reward_amount: action.reward_amount })} placeholder="القيمة" className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><input value={action.reward_label || ""} onChange={(event) => setCampaigns((current) => current.map((item) => item.id === campaign.id ? { ...item, ad_reward_actions: item.ad_reward_actions?.map((entry) => entry.id === action.id ? { ...entry, reward_label: event.target.value } : entry) } : item))} onBlur={() => void changeCampaignAction(campaign, { reward_label: action.reward_label || "" })} placeholder="النص الظاهر للشارة، مثال: خصم 5% أو مكافأة نقدية" className="h-9 rounded-lg border border-[#dedfd8] px-2 text-xs" /><span className="grid place-items-center rounded-lg bg-[#f7faf6] px-2 text-xs font-bold text-[#39704f]">{action.reward_label || (campaign.reward_mode === "discount" && action.reward_amount > 0 ? `خصم ${action.reward_amount}%` : campaign.reward_mode === "cash" ? `مكافأة نقدية = ${action.reward_amount} جنيه` : "النص التلقائي")}</span></div>}{campaign.stats && <div className="mt-3 grid grid-cols-2 gap-2 border-t border-[#eef0ea] pt-3 text-center text-xs sm:grid-cols-3 lg:grid-cols-6"><span><strong className="block text-[#173f3a]">{campaign.stats.participant_count}</strong><span className="text-[#72807a]">الأشخاص</span></span><span><strong className="block text-[#173f3a]">{campaign.stats.interaction_count}</strong><span className="text-[#72807a]">تفاعل مؤهل</span></span><span><strong className="block text-[#c48738]">{campaign.stats.current_entitlement} جنيه</strong><span className="text-[#72807a]">المستحق الحالي</span></span><span><strong className="block text-[#596963]">{campaign.stats.pending_amount} جنيه / {campaign.stats.pending_points} نقطة</strong><span className="text-[#72807a]">معلّق</span></span><span><strong className="block text-[#39704f]">{campaign.stats.approved_amount} جنيه / {campaign.stats.approved_points} نقطة</strong><span className="text-[#72807a]">معتمد</span></span>{campaign.stats.estimated_share !== null && <span><strong className="block text-[#a9584d]">{campaign.stats.estimated_share} جنيه</strong><span className="text-[#72807a]">النصيب التقديري للتفاعل</span></span>}</div>}</div>; })}{!campaigns.length && <p className="py-6 text-center text-sm text-[#89918c]">لا توجد حملات مكافآت.</p>}</div>
       <div className="mt-5 rounded-xl border border-[#e7e7df] bg-[#f7faf6] p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <label className="inline-flex cursor-pointer items-center gap-2 font-bold text-[#173f3a]">

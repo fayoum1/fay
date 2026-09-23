@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSessionIdentity } from "@/lib/admin-auth";
 import { getMarketUser } from "@/lib/market-auth";
 import { getRewardCampaignStats } from "@/lib/reward-campaign-stats";
+
+const VALID_AD_TARGET_AUDIENCES = new Set(["all", "visitors", "customers", "staff", "admins", "sellers"]);
+
+function matchesAdTargetAudience(
+  audience: string | null | undefined,
+  marketUser: Awaited<ReturnType<typeof getMarketUser>>,
+  adminIdentity: Awaited<ReturnType<typeof getSessionIdentity>>,
+) {
+  const safeAudience = VALID_AD_TARGET_AUDIENCES.has(audience || "") ? audience : "all";
+  if (safeAudience === "all") return true;
+  if (safeAudience === "visitors") return !marketUser && !adminIdentity;
+  if (safeAudience === "customers") return !adminIdentity;
+  if (safeAudience === "staff") return adminIdentity?.role === "staff";
+  if (safeAudience === "admins") return adminIdentity?.role === "admin";
+  if (safeAudience === "sellers") return Boolean(marketUser);
+  return true;
+}
 
 function database() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -11,15 +29,17 @@ function database() {
 
 export async function GET(request: NextRequest) {
   const client = database();
-  if (!client) return NextResponse.json({ advertisements: [], packages: [] });
+  if (!client) return NextResponse.json({ advertisements: [], packages: [] }, { headers: { "Cache-Control": "no-store" } });
   const user = await getMarketUser(request);
+  const adminIdentity = await getSessionIdentity(request);
   const now = new Date().toISOString();
   const [{ data: advertisements, error }, { data: packages }] = await Promise.all([
-    client.from("advertisements").select("id,advertiser_name,phone,title,description,media_type,image_url,video_url,target_url,whatsapp,featured,display_order,starts_at,ends_at,views,clicks").eq("status", "مقبول").in("payment_status", ["غير مطلوب", "تم الدفع"]).or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).order("featured", { ascending: false }).order("display_order").order("created_at", { ascending: false }),
+    client.from("advertisements").select("id,advertiser_name,phone,title,description,media_type,image_url,video_url,target_url,whatsapp,featured,reward_badge_enabled,display_order,target_audience,starts_at,ends_at,views,clicks").eq("status", "مقبول").in("payment_status", ["غير مطلوب", "تم الدفع"]).or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).order("featured", { ascending: false }).order("display_order").order("created_at", { ascending: false }),
     client.from("advertisement_packages").select("id,name,duration_days,price").eq("active", true).order("price"),
   ]);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  const advertisementIds = (advertisements || []).map((advertisement) => advertisement.id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: { "Cache-Control": "no-store" } });
+  const visibleAdvertisements = (advertisements || []).filter((advertisement) => matchesAdTargetAudience(advertisement.target_audience, user, adminIdentity));
+  const advertisementIds = visibleAdvertisements.map((advertisement) => advertisement.id);
   const { data: campaigns } = advertisementIds.length
     ? await client
         .from("ad_reward_campaigns")
@@ -40,13 +60,13 @@ export async function GET(request: NextRequest) {
     const badge = campaign.reward_mode === "cash"
       ? amount > 0 ? `مكافأة نقدية = ${amount} جنيه` : Number(campaign.budget || 0) > 0 ? `مكافأة نقدية = ${Number(campaign.budget)} جنيه` : "مكافأة نقدية"
       : campaign.reward_mode === "discount"
-        ? action.reward_label || "خصم"
+        ? action.reward_label || (Number(action.reward_amount || 0) > 0 ? `خصم ${Number(action.reward_amount)}%` : "خصم")
         : campaign.reward_mode === "gift"
           ? action.reward_label || "هدية"
           : points > 0 ? `${points} نقطة` : "مكافأة";
     rewardBadges.set(campaign.advertisement_id, badge);
   }
-  const ownedAdvertisementIds = (advertisements || [])
+  const ownedAdvertisementIds = visibleAdvertisements
     .filter((advertisement) => user?.account_type === "market" && advertisement.phone === user.phone)
     .map((advertisement) => advertisement.id);
   const { data: ownedCampaigns, error: ownedCampaignsError } = ownedAdvertisementIds.length
@@ -63,7 +83,7 @@ export async function GET(request: NextRequest) {
   } catch (reason) {
     return NextResponse.json({ error: reason instanceof Error ? reason.message : "تعذر حساب إحصاءات الحملات" }, { status: 500 });
   }
-  const publicAdvertisements = await Promise.all((advertisements || []).map(async (advertisement) => {
+  const publicAdvertisements = await Promise.all(visibleAdvertisements.map(async (advertisement) => {
     const isOwner = user?.account_type === "market" && advertisement.phone === user.phone;
     let likes = 0;
     let referrals = 0;
@@ -80,13 +100,18 @@ export async function GET(request: NextRequest) {
       likes = Number(likesCount || 0);
       referrals = Number(referralCount || 0);
     }
-    const { phone: _phone, views, clicks, ...publicAdvertisement } = advertisement;
+    const views = Number(advertisement.views || 0);
+    const clicks = Number(advertisement.clicks || 0);
+    const publicAdvertisement = { ...advertisement } as typeof advertisement;
+    delete publicAdvertisement.phone;
+    delete publicAdvertisement.views;
+    delete publicAdvertisement.clicks;
     return {
       ...publicAdvertisement,
-      reward_badge: rewardBadges.get(advertisement.id) || null,
+      reward_badge: advertisement.reward_badge_enabled === false ? null : rewardBadges.get(advertisement.id) || null,
       is_owner: isOwner,
       ...(isOwner ? {
-        stats: { views: Number(views || 0), clicks: Number(clicks || 0), likes, referrals },
+        stats: { views, clicks, likes, referrals },
         reward_campaigns: ownedCampaigns
           .filter((campaign) => campaign.advertisement_id === advertisement.id)
           .map((campaign) => ({
@@ -100,7 +125,10 @@ export async function GET(request: NextRequest) {
       } : {}),
     };
   }));
-  return NextResponse.json({ advertisements: publicAdvertisements, packages: packages || [] });
+  return NextResponse.json(
+    { advertisements: publicAdvertisements, packages: packages || [] },
+    { headers: { "Cache-Control": "no-store, max-age=0" } },
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -114,6 +142,8 @@ export async function POST(request: NextRequest) {
   const mediaType = ["text", "image", "video", "text_image"].includes(String(form.get("media_type"))) ? String(form.get("media_type")) : "text";
   const targetUrl = String(form.get("target_url") || "").trim().slice(0, 500);
   const whatsapp = String(form.get("whatsapp") || user.phone).trim().slice(0, 30);
+  const targetAudience = VALID_AD_TARGET_AUDIENCES.has(String(form.get("target_audience") || "")) ? String(form.get("target_audience")) : "all";
+  const displayOrder = Number(form.get("display_order"));
   const packageId = Number(form.get("package_id"));
   const rewardEnabled = String(form.get("reward_enabled")) === "true";
   const rewardMode = ["points", "discount", "gift", "cash"].includes(String(form.get("reward_mode"))) ? String(form.get("reward_mode")) : "points";
@@ -150,7 +180,7 @@ export async function POST(request: NextRequest) {
   }
   if (["image", "text_image"].includes(mediaType) && !imageUrl) return NextResponse.json({ error: "أرفق صورة للإعلان" }, { status: 400 });
   if (mediaType === "video" && !videoUrl) return NextResponse.json({ error: "أرفق فيديو قصير للإعلان" }, { status: 400 });
-  const { data, error } = await client.from("advertisements").insert({ advertiser_name: user.display_name, phone: user.phone, title, description, media_type: mediaType, image_url: imageUrl, video_url: videoUrl, target_url: targetUrl || null, whatsapp, package_id: packageData.id, duration_days: packageData.duration_days, price: packageData.price, payment_status: packageData.price > 0 ? "قيد الانتظار" : "غير مطلوب" }).select("id,status,admin_note").single();
+  const { data, error } = await client.from("advertisements").insert({ advertiser_name: user.display_name, phone: user.phone, title, description, media_type: mediaType, image_url: imageUrl, video_url: videoUrl, target_url: targetUrl || null, whatsapp, target_audience: targetAudience, display_order: Number.isInteger(displayOrder) ? displayOrder : 0, package_id: packageData.id, duration_days: packageData.duration_days, price: packageData.price, payment_status: packageData.price > 0 ? "قيد الانتظار" : "غير مطلوب" }).select("id,status,admin_note").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   if (rewardEnabled) {
     const effectiveBudget = rewardMode === "discount"
