@@ -618,7 +618,7 @@ declare
   selected_offer public.limited_offers%rowtype;
   assigned_code text;
   remaining_count integer;
-  current_time timestamptz := now();
+  registration_time timestamptz := now();
 begin
   select * into selected_offer
   from public.limited_offers
@@ -626,8 +626,8 @@ begin
   for update;
 
   if not found or selected_offer.status <> 'active'
-    or (selected_offer.starts_at is not null and selected_offer.starts_at > current_time)
-    or (selected_offer.ends_at is not null and selected_offer.ends_at < current_time) then
+    or (selected_offer.starts_at is not null and selected_offer.starts_at > registration_time)
+    or (selected_offer.ends_at is not null and selected_offer.ends_at < registration_time) then
     raise exception 'العرض غير متاح للتسجيل الآن';
   end if;
 
@@ -649,7 +649,7 @@ begin
   );
 
   update public.limited_offers
-  set next_code_number = next_code_number + 1, updated_at = current_time
+  set next_code_number = next_code_number + 1, updated_at = registration_time
   where id = p_offer_id;
 
   remaining_count := case

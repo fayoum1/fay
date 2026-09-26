@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type LimitedOffer = {
+export type LimitedOffer = {
   id: number;
   title: string;
   description: string;
@@ -39,6 +39,44 @@ type AdminOffer = LimitedOffer & {
   signups: OfferSignup[];
 };
 
+type SignupCard = {
+  code: string;
+  name: string;
+  phone: string;
+  district: string;
+  village: string;
+  offerTitle: string;
+  registeredAt: string;
+  expiresAt: string | null;
+};
+
+const signupCardNotice = "هذه البطاقة شخصية ومخصصة لصاحبها فقط، ولا يجوز تحويلها أو استخدامها من شخص آخر. يحق للإدارة إلغاء الحجز عند ثبوت التلاعب أو إساءة الاستخدام.";
+
+function printSignupCard(card: SignupCard) {
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] || character);
+  const address = [card.district, card.village].filter(Boolean).join("، ");
+  const registeredAt = new Date(card.registeredAt).toLocaleString("ar-EG");
+  const expiresAt = card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("ar-EG") : "غير محدد";
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return false;
+
+  printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بطاقة الحجز ${escapeHtml(card.code)}</title><style>
+    @page{size:A5 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;padding:24px;background:#f2f5f1;color:#173f3a;font-family:Tahoma,Arial,sans-serif}.card{max-width:720px;margin:24px auto;padding:30px;border:2px solid #173f3a;border-top:10px solid #c48738;background:#fffdf9}.brand{margin:0;color:#a66c20;font-size:14px}.title{margin:8px 0 22px;font-size:24px}.code{padding:12px 16px;background:#edf4ed;text-align:center;font: bold 32px monospace;direction:ltr}.details{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin-top:22px}.label{display:block;margin-bottom:4px;color:#72807a;font-size:12px}.value{font-size:16px;font-weight:bold}.notice{margin-top:18px;padding:12px;border:1px solid #e5c98c;background:#fff8e8;color:#76500f;font-size:12px;font-weight:bold;line-height:1.8}.footer{margin-top:16px;padding-top:12px;border-top:1px solid #d9ded7;color:#72807a;font-size:11px}@media print{body{padding:0;background:#fff}.card{margin:0;max-width:none;break-inside:avoid}}
+  </style></head><body><main class="card"><p class="brand">بطاقة حجز مستفيد</p><h1 class="title">${escapeHtml(card.offerTitle)}</h1><div class="code">${escapeHtml(card.code)}</div><section class="details"><div><span class="label">الاسم</span><span class="value">${escapeHtml(card.name)}</span></div><div><span class="label">رقم الهاتف</span><span class="value" dir="ltr">${escapeHtml(card.phone)}</span></div><div><span class="label">العنوان</span><span class="value">${escapeHtml(address)}</span></div><div><span class="label">تاريخ الحجز</span><span class="value">${escapeHtml(registeredAt)}</span></div><div><span class="label">صالحة حتى</span><span class="value">${escapeHtml(expiresAt)}</span></div></section><p class="notice">${escapeHtml(signupCardNotice)}</p><p class="footer">رقم البطاقة الفريد: ${escapeHtml(card.code)}</p></main></body></html>`);
+  printWindow.document.close();
+  window.setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 300);
+  return true;
+}
+
 const districts = ["الفيوم", "إبشواي", "إطسا", "سنورس", "طامية", "يوسف الصديق"];
 const signupStatusLabels: Record<string, string> = {
   registered: "مسجل",
@@ -46,21 +84,22 @@ const signupStatusLabels: Record<string, string> = {
   fulfilled: "تم الاستلام",
   cancelled: "ملغي",
 };
-export function LimitedOfferExperience({ offers, popupOffer, onPopupClose, onOffersChange }: {
+export function LimitedOfferExperience({ offers, popupOffer, selectedOffer, onPopupClose, onOffersChange, onOfferSelect }: {
   offers: LimitedOffer[];
   popupOffer: LimitedOffer | null;
+  selectedOffer: LimitedOffer | null;
   onPopupClose: () => void;
   onOffersChange: (offers: LimitedOffer[]) => void;
+  onOfferSelect: (offer: LimitedOffer | null) => void;
 }) {
-  const [selectedOffer, setSelectedOffer] = useState<LimitedOffer | null>(null);
   const [message, setMessage] = useState("");
-  const [successCode, setSuccessCode] = useState("");
+  const [successCard, setSuccessCard] = useState<SignupCard | null>(null);
   const [busy, setBusy] = useState(false);
 
   const openOffer = (offer: LimitedOffer) => {
-    setSelectedOffer(offer);
+    onOfferSelect(offer);
     setMessage("");
-    setSuccessCode("");
+    setSuccessCard(null);
     onPopupClose();
   };
 
@@ -71,6 +110,12 @@ export function LimitedOfferExperience({ offers, popupOffer, onPopupClose, onOff
     setMessage("");
     const formData = new FormData(event.currentTarget);
     formData.set("offer_id", String(selectedOffer.id));
+    const signup = {
+      name: String(formData.get("name") || ""),
+      phone: String(formData.get("phone") || ""),
+      district: String(formData.get("district") || ""),
+      village: String(formData.get("village") || ""),
+    };
     const response = await fetch("/api/limited-offers", { method: "POST", body: formData });
     const result = await response.json().catch(() => ({}));
     setBusy(false);
@@ -79,7 +124,7 @@ export function LimitedOfferExperience({ offers, popupOffer, onPopupClose, onOff
       return;
     }
     onOffersChange(offers.map((offer) => offer.id === selectedOffer.id ? { ...offer, remaining: result.remaining } : offer));
-    setSuccessCode(result.code);
+    setSuccessCard({ ...signup, ...result });
     setMessage(result.remaining === null ? "تم التسجيل بنجاح." : `تم التسجيل بنجاح. المتبقي من العرض: ${result.remaining}`);
   };
 
@@ -103,30 +148,6 @@ export function LimitedOfferExperience({ offers, popupOffer, onPopupClose, onOff
 
   return (
     <>
-      {offers.some((offer) => offer.show_in_scroll) && (
-        <section className="my-3 overflow-hidden" aria-label="عروض محدودة">
-          <div className="mb-2 flex items-center justify-between px-1">
-            <h2 className="text-sm font-bold text-[#173f3a]">عروض محدودة</h2>
-            <span className="text-[10px] font-bold text-[#a66c20]">احجز مكانك</span>
-          </div>
-          <div className="advertisement-strip flex w-max min-w-full items-center gap-3">
-            {offers.filter((offer) => offer.show_in_scroll).map((offer) => (
-              <button key={offer.id} type="button" onClick={() => openOffer(offer)} className="grid h-[158px] w-[min(96vw,600px)] shrink-0 grid-cols-[140px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right shadow-sm sm:grid-cols-[190px_minmax(0,1fr)]">
-                <img src={offer.image_url} alt="" className="h-[138px] w-full rounded-md bg-[#eef0ea] object-cover" />
-                <span className="min-w-0 space-y-1">
-                  <span className="block text-[10px] font-bold text-[#a66c20]">عدد محدود من المستفيدين</span>
-                  <span className="block truncate text-sm font-bold text-[#173f3a]">{offer.title}</span>
-                  <span className="block line-clamp-2 text-xs leading-5 text-[#596963]">{offer.description}</span>
-                  <span className="inline-flex rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white">
-                    {offer.remaining === null ? "التسجيل متاح" : `متبقي ${offer.remaining} من ${offer.max_recipients}`}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
       {popupOffer && !selectedOffer && (
         <div className="fixed inset-0 z-[61] grid place-items-center bg-[#173f3acc] p-3 sm:p-5" role="dialog" aria-modal="true" aria-label="عرض محدود">
           <div className="relative max-h-[94dvh] w-full max-w-xl overflow-y-auto rounded-lg bg-[#fffdf9] shadow-2xl">
@@ -149,16 +170,25 @@ export function LimitedOfferExperience({ offers, popupOffer, onPopupClose, onOff
       {selectedOffer && (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#173f3acc] p-3 sm:p-5" role="dialog" aria-modal="true" aria-label="التسجيل في العرض">
           <section className="relative max-h-[94dvh] w-full max-w-lg overflow-y-auto rounded-lg bg-[#fffdf9] p-5 shadow-2xl sm:p-6">
-            <button type="button" onClick={() => setSelectedOffer(null)} aria-label="إغلاق نموذج التسجيل" className="absolute left-4 top-3 grid size-9 place-items-center rounded-full text-2xl text-[#72807a]">×</button>
+            <button type="button" onClick={() => onOfferSelect(null)} aria-label="إغلاق نموذج التسجيل" className="absolute left-4 top-3 grid size-9 place-items-center rounded-full text-2xl text-[#72807a]">×</button>
             <img src={selectedOffer.image_url} alt="" className="mb-4 max-h-48 w-full rounded-md bg-[#eef0ea] object-contain" />
             <p className="text-xs font-bold text-[#a66c20]">تسجيل عرض محدود</p>
             <h2 className="mt-1 font-display text-2xl font-bold text-[#173f3a]">{selectedOffer.title}</h2>
-            {successCode ? (
+            {successCard ? (
               <div className="mt-5 rounded-lg border border-[#cde9d5] bg-[#edf9f0] p-5 text-center">
-                <p className="text-sm font-bold text-[#39704f]">تم تسجيلك. احتفظ بكودك</p>
-                <strong className="mt-2 block font-mono text-4xl text-[#173f3a]">{successCode}</strong>
-                <p className="mt-3 text-sm text-[#596963]">{message}</p>
-                <button type="button" onClick={() => setSelectedOffer(null)} className="mt-4 h-10 rounded-md bg-[#173f3a] px-5 text-sm font-bold text-white">إغلاق</button>
+                <p className="text-sm font-bold text-[#39704f]">تم الحجز بنجاح. هذه بطاقة الحجز الخاصة بك</p>
+                <strong className="mt-3 block font-mono text-4xl text-[#173f3a]">{successCard.code}</strong>
+                <dl className="mt-4 grid grid-cols-2 gap-3 text-right text-xs">
+                  <div><dt className="text-[#72807a]">الاسم</dt><dd className="mt-1 font-bold">{successCard.name}</dd></div>
+                  <div><dt className="text-[#72807a]">رقم الهاتف</dt><dd className="mt-1 font-bold" dir="ltr">{successCard.phone}</dd></div>
+                  <div><dt className="text-[#72807a]">العنوان</dt><dd className="mt-1 font-bold">{[successCard.district, successCard.village].filter(Boolean).join("، ")}</dd></div>
+                  <div><dt className="text-[#72807a]">تاريخ الحجز</dt><dd className="mt-1 font-bold">{new Date(successCard.registeredAt).toLocaleDateString("ar-EG")}</dd></div>
+                  <div><dt className="text-[#72807a]">صلاحية البطاقة حتى</dt><dd className="mt-1 font-bold">{successCard.expiresAt ? new Date(successCard.expiresAt).toLocaleDateString("ar-EG") : "غير محدد"}</dd></div>
+                </dl>
+                <p className="mt-4 rounded-md border border-[#e5c98c] bg-[#fff8e8] p-3 text-right text-xs font-semibold leading-6 text-[#76500f]">{signupCardNotice}</p>
+                <p className="mt-3 text-xs text-[#596963]">{message}</p>
+                <button type="button" onClick={() => { if (!printSignupCard(successCard)) setMessage("اسمح بالنوافذ المنبثقة لتحميل البطاقة PDF."); }} className="mt-4 h-11 w-full rounded-md bg-[#173f3a] px-5 text-sm font-bold text-white">تحميل بطاقة الحجز PDF</button>
+                <button type="button" onClick={() => onOfferSelect(null)} className="mt-4 h-10 rounded-md bg-[#173f3a] px-5 text-sm font-bold text-white">إغلاق</button>
               </div>
             ) : (
               <form onSubmit={submitSignup} className="mt-4 grid gap-3">
@@ -176,9 +206,6 @@ export function LimitedOfferExperience({ offers, popupOffer, onPopupClose, onOff
                 </label>
                 <label className="grid gap-1 text-sm font-bold text-[#173f3a]">اسم القرية <span className="text-xs font-normal text-[#89918c]">اختياري</span>
                   <input name="village" maxLength={100} className="h-11 rounded-md border border-[#d9ded7] bg-white px-3 font-normal outline-none focus:border-[#39704f]" />
-                </label>
-                <label className="grid gap-1 text-sm font-bold text-[#173f3a]">صورة أو ملف PDF <span className="text-xs font-normal text-[#89918c]">اختياري، حتى 10 ميجابايت</span>
-                  <input name="attachment" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="min-h-11 rounded-md border border-[#d9ded7] bg-white p-2 text-xs font-normal" />
                 </label>
                 {message && <p role="alert" className="text-sm font-semibold text-[#a9584d]">{message}</p>}
                 <button disabled={busy || selectedOffer.remaining === 0} className="h-12 rounded-md bg-[#173f3a] font-bold text-white disabled:opacity-50">

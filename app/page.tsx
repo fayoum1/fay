@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa6";
-import { LimitedOfferExperience, LimitedOfferManager } from "@/components/limited-offers";
+import { LimitedOfferExperience, LimitedOfferManager, type LimitedOffer } from "@/components/limited-offers";
 import {
   Check,
   CheckCircle2,
@@ -109,19 +109,6 @@ type PublicAdvertisement = {
   starts_at?: string | null;
   ends_at?: string | null;
 };
-type LimitedOffer = {
-  id: number;
-  title: string;
-  description: string;
-  image_url: string;
-  code_prefix: string;
-  max_recipients: number | null;
-  remaining: number | null;
-  allowed_districts: string[];
-  show_in_scroll: boolean;
-  show_in_popup: boolean;
-};
-
 type AdvertisementRotationMode = "scroll" | "carousel";
 type AdvertisementDisplaySettings = {
   duration_seconds: number;
@@ -546,6 +533,7 @@ export default function Home() {
   const [featuredAdvertisement, setFeaturedAdvertisement] = useState<PublicAdvertisement | null>(null);
   const [limitedOffers, setLimitedOffers] = useState<LimitedOffer[]>([]);
   const [featuredLimitedOffer, setFeaturedLimitedOffer] = useState<LimitedOffer | null>(null);
+  const [selectedLimitedOffer, setSelectedLimitedOffer] = useState<LimitedOffer | null>(null);
 
   useEffect(() => {
     const restoreStaffName = window.setTimeout(() => {
@@ -1861,10 +1849,19 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            {advertisements.length > 0 && <AdvertisementStrip advertisements={advertisements} config={adDisplaySettings} />}
+            {(advertisements.length > 0 || limitedOffers.some((offer) => offer.show_in_scroll)) && (
+              <AdvertisementStrip
+                advertisements={advertisements}
+                offers={limitedOffers.filter((offer) => offer.show_in_scroll)}
+                onOfferSelect={setSelectedLimitedOffer}
+                config={adDisplaySettings}
+              />
+            )}
             <LimitedOfferExperience
               offers={limitedOffers}
               popupOffer={featuredLimitedOffer}
+              selectedOffer={selectedLimitedOffer}
+              onOfferSelect={setSelectedLimitedOffer}
               onPopupClose={() => setFeaturedLimitedOffer(null)}
               onOffersChange={setLimitedOffers}
             />
@@ -3646,39 +3643,100 @@ function MarketingManager({
   );
 }
 
-function AdvertisementStrip({ advertisements, config }: { advertisements: PublicAdvertisement[]; config: AdvertisementDisplaySettings }) {
+type MarketingFeedItem =
+  | { kind: "advertisement"; value: PublicAdvertisement }
+  | { kind: "offer"; value: LimitedOffer };
+
+function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
+  advertisements: PublicAdvertisement[];
+  offers: LimitedOffer[];
+  onOfferSelect: (offer: LimitedOffer) => void;
+  config: AdvertisementDisplaySettings;
+}) {
+  const feed: MarketingFeedItem[] = [];
+  for (let index = 0; index < Math.max(advertisements.length, offers.length); index += 1) {
+    if (advertisements[index]) feed.push({ kind: "advertisement", value: advertisements[index] });
+    if (offers[index]) feed.push({ kind: "offer", value: offers[index] });
+  }
   const isManualMode = config.rotation_mode === "carousel";
   const animationDuration = `${Math.max(config.duration_seconds, 5)}s`;
   const [activeIndex, setActiveIndex] = useState(0);
+  const visibleIndex = feed.length ? activeIndex % feed.length : 0;
 
   useEffect(() => {
-    if (!isManualMode || !config.auto_play || advertisements.length < 2) return;
+    if (!isManualMode || !config.auto_play || feed.length < 2) return;
     const timer = window.setInterval(() => {
-      setActiveIndex((current) => (current + 1) % advertisements.length);
+      setActiveIndex((current) => (current + 1) % feed.length);
     }, config.duration_seconds * 1000);
 
     return () => window.clearInterval(timer);
-  }, [advertisements.length, config.auto_play, config.duration_seconds, isManualMode]);
-
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [advertisements.length]);
+  }, [feed.length, config.auto_play, config.duration_seconds, isManualMode]);
 
   const goToPrevious = () => {
-    if (!advertisements.length) return;
-    setActiveIndex((current) => (current - 1 + advertisements.length) % advertisements.length);
+    if (!feed.length) return;
+    setActiveIndex((current) => (current - 1 + feed.length) % feed.length);
   };
 
   const goToNext = () => {
-    if (!advertisements.length) return;
-    setActiveIndex((current) => (current + 1) % advertisements.length);
+    if (!feed.length) return;
+    setActiveIndex((current) => (current + 1) % feed.length);
   };
 
-  if (!advertisements.length) return null;
+  const renderCard = (item: MarketingFeedItem) => {
+    if (item.kind === "offer") {
+      const offer = item.value;
+      return (
+        <button type="button" onClick={() => onOfferSelect(offer)} className="grid h-[158px] w-full grid-cols-[140px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right shadow-sm sm:grid-cols-[190px_minmax(0,1fr)]">
+          <img src={offer.image_url} alt="" className="h-[138px] w-full rounded-md bg-[#eef0ea] object-cover" />
+          <span className="min-w-0 space-y-1">
+            <span className="block text-[10px] font-bold text-[#a66c20]">عرض محدود</span>
+            <span className="block truncate text-sm font-bold text-[#173f3a]">{offer.title}</span>
+            <span className="block line-clamp-2 text-xs leading-5 text-[#596963]">{offer.description}</span>
+            <span className="inline-flex rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white">
+              {offer.remaining === null ? "التسجيل متاح" : offer.remaining === 0 ? "اكتمل العدد" : `متبقي ${offer.remaining} من ${offer.max_recipients}`}
+            </span>
+          </span>
+        </button>
+      );
+    }
+
+    const advertisement = item.value;
+    return (
+      <Link href={`/ads/${advertisement.id}`} className="block">
+        <div className="grid h-[158px] w-full grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
+          {advertisement.media_type === "video" && advertisement.video_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><video src={advertisement.video_url} muted autoPlay loop playsInline className="max-h-full max-w-full object-contain" /></div> : advertisement.image_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><img src={advertisement.image_url} alt="" className="max-h-full max-w-full object-contain" /></div> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
+          <div className="min-w-0 space-y-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="shrink-0 text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
+              {config.show_advertiser_name && <p className="min-w-0 truncate text-[9px] font-bold text-[#72807a]">{advertisement.advertiser_name}</p>}
+            </div>
+            <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
+            {config.show_reward_badge && advertisement.reward_badge && <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">{advertisement.reward_badge}</span>}
+            <p className="line-clamp-1 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
+            {config.show_expiry && <AdvertisementExpiryMeta advertisement={advertisement} compact />}
+          </div>
+        </div>
+      </Link>
+    );
+  };
+
+  const renderAction = (item: MarketingFeedItem) => item.kind === "offer"
+    ? <button type="button" onClick={() => onOfferSelect(item.value)} disabled={item.value.remaining === 0} className="mt-2 h-10 w-full rounded-md bg-[#173f3a] text-sm font-bold text-white disabled:opacity-50 sm:hidden">احجز العرض</button>
+    : <Link href={`/ads/${item.value.id}`} className="mt-2 flex h-10 items-center justify-center rounded-md bg-[#173f3a] text-sm font-bold text-white sm:hidden">عرض الإعلان</Link>;
+
+  const renderFeedItem = (item: MarketingFeedItem, carousel: boolean) => (
+    <div key={`${item.kind}-${item.value.id}`} className={carousel ? "w-full shrink-0 px-0.5" : "w-[min(96vw,600px)] shrink-0"}>
+      {renderCard(item)}
+      {renderAction(item)}
+    </div>
+  );
+
+  if (!feed.length) return null;
 
   return (
-    <div className="my-2 overflow-hidden" aria-label="الإعلانات المقبولة">
-      {isManualMode && advertisements.length > 1 && (
+    <section className="my-2 overflow-hidden" aria-label="الإعلانات والعروض المحدودة">
+      <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">إعلانات وعروض محدودة</h2>
+      {isManualMode && feed.length > 1 && (
         <div className="mb-2 flex items-center justify-end gap-2 px-1">
           <button type="button" onClick={goToPrevious} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">السابق</button>
           <button type="button" onClick={goToNext} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">التالي</button>
@@ -3689,67 +3747,20 @@ function AdvertisementStrip({ advertisements, config }: { advertisements: Public
         <div className="relative overflow-hidden rounded-md border border-[#dfe5dc] bg-[#f5f7f4] p-1">
           <div
             className="flex transition-transform duration-500 ease-out"
-            style={{ transform: `translateX(-${activeIndex * 100}%)` }}
+            style={{ transform: `translateX(-${visibleIndex * 100}%)` }}
           >
-            {advertisements.map((advertisement) => (
-              <div key={advertisement.id} className="w-full shrink-0 px-0.5">
-                <Link href={`/ads/${advertisement.id}`}>
-                  <div className="grid h-[158px] w-full grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
-                    {advertisement.media_type === "video" && advertisement.video_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><video src={advertisement.video_url} muted autoPlay loop playsInline className="max-h-full max-w-full object-contain" /></div> : advertisement.image_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><img src={advertisement.image_url} alt="" className="max-h-full max-w-full object-contain" /></div> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <p className="shrink-0 text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
-                        {config.show_advertiser_name && (
-                          <p className="min-w-0 truncate text-[9px] font-bold text-[#72807a]">{advertisement.advertiser_name}</p>
-                        )}
-                      </div>
-                      <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
-                      {config.show_reward_badge && advertisement.reward_badge && (
-                        <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
-                          {advertisement.reward_badge}
-                        </span>
-                      )}
-                      <p className="line-clamp-1 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
-                      {config.show_expiry && <AdvertisementExpiryMeta advertisement={advertisement} compact />}
-                    </div>
-                  </div>
-                </Link>
-              </div>
-            ))}
+            {feed.map((item) => renderFeedItem(item, true))}
           </div>
         </div>
       ) : (
         <div
-          className="advertisement-strip flex w-max min-w-full items-center gap-3"
+          className="advertisement-strip flex w-max min-w-full items-start gap-3"
           style={{ animationDuration, animationPlayState: config.auto_play ? "running" : "paused" }}
         >
-          {advertisements.map((advertisement) => {
-            const content = (
-              <div className="grid h-[158px] w-[min(96vw,600px)] shrink-0 grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
-                {advertisement.media_type === "video" && advertisement.video_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><video src={advertisement.video_url} muted autoPlay loop playsInline className="max-h-full max-w-full object-contain" /></div> : advertisement.image_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><img src={advertisement.image_url} alt="" className="max-h-full max-w-full object-contain" /></div> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
-                <div className="min-w-0 space-y-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <p className="shrink-0 text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
-                    {config.show_advertiser_name && (
-                      <p className="min-w-0 truncate text-[9px] font-bold text-[#72807a]">{advertisement.advertiser_name}</p>
-                    )}
-                  </div>
-                  <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
-                  {config.show_reward_badge && advertisement.reward_badge && (
-                    <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">
-                      {advertisement.reward_badge}
-                    </span>
-                  )}
-                  <p className="line-clamp-1 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
-                  {config.show_expiry && <AdvertisementExpiryMeta advertisement={advertisement} compact />}
-                </div>
-              </div>
-            );
-            return <Link key={advertisement.id} href={`/ads/${advertisement.id}`}>{content}</Link>;
-          })}
+          {feed.map((item) => renderFeedItem(item, false))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
