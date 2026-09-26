@@ -12,11 +12,17 @@ function unauthorized() {
   return NextResponse.json({ error: "هذه الصلاحية للأدمن فقط" }, { status: 401 });
 }
 
+function readOrderRegions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const regions = [...new Set(value.filter((region): region is string => typeof region === "string").map((region) => region.trim()).filter(Boolean))];
+  return regions.includes("*") ? ["*"] : regions;
+}
+
 export async function GET(request: NextRequest) {
   if (await getAdminRole(request) !== "admin") return unauthorized();
   const database = client();
   if (!database) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
-  const { data, error } = await database.from("employees").select("id, name, active, created_at").order("created_at", { ascending: false });
+  const { data, error } = await database.from("employees").select("id, name, order_regions, order_region_mode, last_seen_at, active, created_at").order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data || []);
 }
@@ -28,8 +34,12 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const password = typeof body.password === "string" ? body.password.trim() : "";
-  if (!name || password.length < 4) return NextResponse.json({ error: "اكتب اسم الموظف وكلمة سر من 4 أحرف أو أرقام على الأقل" }, { status: 400 });
-  const { data, error } = await database.from("employees").insert({ name, password_hash: hashPassword(password) }).select("id, name, active, created_at").single();
+  const orderRegions = readOrderRegions(body.order_regions);
+  const orderRegionMode = body.order_region_mode === "exclude" ? "exclude" : body.order_region_mode === "include" ? "include" : null;
+  if (!name || password.length < 4 || !orderRegionMode || (orderRegionMode === "include" && !orderRegions.length) || (orderRegionMode === "exclude" && orderRegions.includes("*"))) {
+    return NextResponse.json({ error: "اكتب بيانات الموظف وحدد نمط ومناطق رؤية الطلبات" }, { status: 400 });
+  }
+  const { data, error } = await database.from("employees").insert({ name, password_hash: hashPassword(password), order_regions: orderRegions, order_region_mode: orderRegionMode }).select("id, name, order_regions, order_region_mode, last_seen_at, active, created_at").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data, { status: 201 });
 }
@@ -42,10 +52,21 @@ export async function PATCH(request: NextRequest) {
   const id = Number(body.id);
   const name = typeof body.name === "string" ? body.name.trim() : "";
   const password = typeof body.password === "string" ? body.password.trim() : "";
-  if (!Number.isInteger(id) || !name) return NextResponse.json({ error: "بيانات الموظف غير صحيحة" }, { status: 400 });
-  const update = { name, ...(password ? (password.length >= 4 ? { password_hash: hashPassword(password) } : {}) : {}) };
+  const orderRegions = readOrderRegions(body.order_regions);
+  const orderRegionMode = body.order_region_mode === "exclude" ? "exclude" : body.order_region_mode === "include" ? "include" : null;
+  if (!Number.isInteger(id) || !name || !orderRegionMode || (orderRegionMode === "include" && !orderRegions.length) || (orderRegionMode === "exclude" && orderRegions.includes("*"))) {
+    return NextResponse.json({ error: "بيانات الموظف أو نطاق رؤية الطلبات غير صحيحة" }, { status: 400 });
+  }
+  const active = typeof body.active === "boolean" ? body.active : undefined;
+  const update = {
+    name,
+    order_regions: orderRegions,
+    order_region_mode: orderRegionMode,
+    ...(active === undefined ? {} : { active }),
+    ...(password ? (password.length >= 4 ? { password_hash: hashPassword(password) } : {}) : {}),
+  };
   if (password && password.length < 4) return NextResponse.json({ error: "كلمة السر يجب أن تكون 4 أحرف أو أرقام على الأقل" }, { status: 400 });
-  const { data, error } = await database.from("employees").update(update).eq("id", id).select("id, name, active, created_at").single();
+  const { data, error } = await database.from("employees").update(update).eq("id", id).select("id, name, order_regions, order_region_mode, last_seen_at, active, created_at").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json(data);
 }

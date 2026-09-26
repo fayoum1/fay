@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 const COOKIE_NAME = "rashefa_admin_session";
 
 export type Role = "admin" | "staff";
-export type SessionIdentity = { role: Role; employeeId?: number; staffName?: string };
+export type SessionIdentity = { role: Role; employeeId?: number; staffName?: string; orderRegions?: string[]; orderRegionMode?: "include" | "exclude" };
 
 function database() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -52,12 +52,13 @@ export async function authenticatePassword(role: Role, password: string) {
     if (!(await verifyPassword(role, password))) return null;
     return { role, token: tokenForCredential(role, undefined, await adminPasswordHash() as string) } satisfies SessionIdentity & { token: string };
   }
+  const normalizedPassword = password.trim();
   const client = database();
-  if (!client) return process.env.STAFF_PIN === password ? { role, employeeId: 0, staffName: "" } : null;
-  const { data: employees } = await client.from("employees").select("id, name, password_hash").eq("active", true);
+  if (!client) return process.env.STAFF_PIN === normalizedPassword ? { role, employeeId: 0, staffName: "" } : null;
+  const { data: employees } = await client.from("employees").select("id, name, password_hash, order_regions, order_region_mode").eq("active", true);
   for (const employee of employees || []) {
-    if (verifyStoredPassword(password, employee.password_hash)) {
-      return { role, employeeId: employee.id, staffName: employee.name, token: tokenForCredential(role, employee.id, employee.password_hash) } satisfies SessionIdentity & { token: string };
+    if (verifyStoredPassword(normalizedPassword, employee.password_hash)) {
+      return { role, employeeId: employee.id, staffName: employee.name, orderRegions: employee.order_regions || [], orderRegionMode: employee.order_region_mode || "include", token: tokenForCredential(role, employee.id, employee.password_hash) } satisfies SessionIdentity & { token: string };
     }
   }
   return null;
@@ -81,8 +82,8 @@ export async function getSessionIdentity(request: NextRequest): Promise<SessionI
   }
   if (role === "staff" && Number.isInteger(Number(id))) {
     const client = database();
-    const { data: employee } = client ? await client.from("employees").select("id, name, password_hash").eq("id", Number(id)).eq("active", true).maybeSingle() : { data: null };
-    if (employee && signature === createHmac("sha256", employee.password_hash).update("admin-session").digest("hex")) return { role: "staff", employeeId: employee.id, staffName: employee.name };
+    const { data: employee } = client ? await client.from("employees").select("id, name, password_hash, order_regions, order_region_mode").eq("id", Number(id)).eq("active", true).maybeSingle() : { data: null };
+    if (employee && signature === createHmac("sha256", employee.password_hash).update("admin-session").digest("hex")) return { role: "staff", employeeId: employee.id, staffName: employee.name, orderRegions: employee.order_regions || [], orderRegionMode: employee.order_region_mode || "include" };
   }
   return null;
 }

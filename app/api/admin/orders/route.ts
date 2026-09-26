@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSessionIdentity } from "@/lib/admin-auth";
+import { orderMatchesRegions, parseOrderRegion } from "@/lib/order-region";
 
 type OrderItem = {
   id: number;
@@ -22,14 +23,36 @@ function normalizeOrderItems(value: unknown): OrderItem[] {
 }
 
 export async function GET(request: NextRequest) {
-  if (!(await getSessionIdentity(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const identity = await getSessionIdentity(request);
+  if (!identity) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const database = createClient(url, key, { auth: { persistSession: false } });
-  const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json((data || []).map((order) => {
+  let orders;
+  const orderRegionMode = identity.orderRegionMode || "include";
+  if (identity.role !== "staff" || (orderRegionMode === "include" && identity.orderRegions?.includes("*"))) {
+    const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    orders = data || [];
+  } else if (orderRegionMode === "exclude") {
+    const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    orders = (data || []).filter((order) => orderMatchesRegions(identity.orderRegions, order.governorate, order.district, "exclude"));
+  } else {
+    const results = await Promise.all((identity.orderRegions || []).map((region) => {
+      const location = parseOrderRegion(region);
+      if (!location) return database.from("orders").select("*").eq("id", -1);
+      return location.district
+        ? database.from("orders").select("*").eq("governorate", location.governorate).eq("district", location.district)
+        : database.from("orders").select("*").eq("governorate", location.governorate).is("district", null);
+    }));
+    const failed = results.find((result) => result.error);
+    if (failed?.error) return NextResponse.json({ error: failed.error.message }, { status: 500 });
+    orders = [...new Map(results.flatMap((result) => result.data || []).map((order) => [order.id, order])).values()]
+      .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime());
+  }
+  return NextResponse.json(orders.map((order) => {
     const orderItems = normalizeOrderItems(order.items);
     return {
       ...order,
@@ -51,6 +74,17 @@ export async function PATCH(request: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const database = createClient(url, key, { auth: { persistSession: false } });
+  if (identity.role === "staff") {
+    const { data: targetOrder, error: targetError } = await database
+      .from("orders")
+      .select("governorate, district")
+      .eq("id", id)
+      .maybeSingle();
+    if (targetError) return NextResponse.json({ error: targetError.message }, { status: 400 });
+    if (!targetOrder || !orderMatchesRegions(identity.orderRegions, targetOrder.governorate, targetOrder.district, identity.orderRegionMode || "include")) {
+      return NextResponse.json({ error: "الطلب خارج نطاق منطقتك" }, { status: 404 });
+    }
+  }
   if (Number.isInteger(item_id)) {
     if (!allowed.includes(item_status)) return NextResponse.json({ error: "Invalid item status" }, { status: 400 });
     const { data: order, error: orderError } = await database.from("orders").select("items,status").eq("id", id).single();
@@ -78,10 +112,12 @@ export async function PATCH(request: NextRequest) {
     }
     let { error } = await database.from("orders").update(update).eq("id", id);
     if (error && /staff_name|admin_reverted|status_changed_by/.test(error.message)) {
-      delete update.staff_name;
       delete update.admin_reverted;
       delete update.status_changed_by;
       ({ error } = await database.from("orders").update(update).eq("id", id));
+    }
+    if (error && /staff_name/.test(error.message)) {
+      return NextResponse.json({ error: "تعذر حفظ التارجيت لأن حقل الموظف غير موجود في قاعدة البيانات. طبّق تحديث supabase/schema.sql ثم أعد المحاولة." }, { status: 400 });
     }
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ success: true, items: updatedItems, status: update.status });
@@ -123,10 +159,12 @@ export async function PATCH(request: NextRequest) {
   if (role === "admin" && previous_status === "تم" && status !== "تم") update.admin_reverted = true;
   let { error } = await database.from("orders").update(update).eq("id", id);
   if (error && /staff_name|admin_reverted|status_changed_by/.test(error.message)) {
-    delete update.staff_name;
     delete update.admin_reverted;
     delete update.status_changed_by;
     ({ error } = await database.from("orders").update(update).eq("id", id));
+  }
+  if (error && /staff_name/.test(error.message)) {
+    return NextResponse.json({ error: "تعذر حفظ التارجيت لأن حقل الموظف غير موجود في قاعدة البيانات. طبّق تحديث supabase/schema.sql ثم أعد المحاولة." }, { status: 400 });
   }
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ success: true });

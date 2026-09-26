@@ -125,8 +125,22 @@ export async function GET(request: NextRequest) {
       } : {}),
     };
   }));
+    const { data: limitedOffers, error: limitedOffersError } = await client
+      .from("limited_offers")
+      .select("id,title,description,image_url,code_prefix,max_recipients,next_code_number,allowed_districts,show_in_scroll,show_in_popup,starts_at,ends_at")
+      .eq("status", "active")
+      .or(`starts_at.is.null,starts_at.lte.${now}`)
+      .or(`ends_at.is.null,ends_at.gte.${now}`)
+      .order("created_at", { ascending: false });
+    if (limitedOffersError && !["42P01", "PGRST205"].includes(limitedOffersError.code || "")) {
+      return NextResponse.json({ error: limitedOffersError.message }, { status: 500, headers: { "Cache-Control": "no-store" } });
+    }
+    const publicLimitedOffers = (limitedOffers || []).map(({ next_code_number: nextCodeNumber, ...offer }) => ({
+      ...offer,
+      remaining: offer.max_recipients === null ? null : Math.max(0, Number(offer.max_recipients) - Number(nextCodeNumber || 1) + 1),
+    })).filter((offer) => offer.remaining === null || offer.remaining > 0);
   return NextResponse.json(
-    { advertisements: publicAdvertisements, packages: packages || [] },
+      { advertisements: publicAdvertisements, packages: packages || [], limited_offers: publicLimitedOffers },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }

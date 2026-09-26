@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa6";
+import { LimitedOfferExperience, LimitedOfferManager } from "@/components/limited-offers";
 import {
   Check,
   CheckCircle2,
@@ -23,6 +24,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Smartphone,
+  Star,
   Store,
   Trash2,
   Volume2,
@@ -73,7 +75,7 @@ type Order = {
 };
 type OrderStatus = "حجز مؤكد" | "قادم" | "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
 type UserRole = "admin" | "staff";
-type Employee = { id: number; name: string; active: boolean; created_at: string };
+type Employee = { id: number; name: string; order_regions: string[]; order_region_mode: "include" | "exclude"; last_seen_at: string | null; active: boolean; created_at: string };
 type SellerOffer = {
   id: number;
   seller_name: string;
@@ -106,6 +108,18 @@ type PublicAdvertisement = {
   display_order?: number | null;
   starts_at?: string | null;
   ends_at?: string | null;
+};
+type LimitedOffer = {
+  id: number;
+  title: string;
+  description: string;
+  image_url: string;
+  code_prefix: string;
+  max_recipients: number | null;
+  remaining: number | null;
+  allowed_districts: string[];
+  show_in_scroll: boolean;
+  show_in_popup: boolean;
 };
 
 type AdvertisementRotationMode = "scroll" | "carousel";
@@ -263,6 +277,18 @@ function formatOrderDate(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ar-EG");
 }
 
+function formatEmployeeLastSeen(value?: string | null) {
+  if (!value) return "لم يسجل دخول بعد";
+  return new Date(value).toLocaleString("ar-EG", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function formatRelativeTime(value: string | undefined, now: number) {
   if (!value) return "";
   const elapsed = Math.max(0, now - new Date(value).getTime());
@@ -387,6 +413,38 @@ function OrderAttribution({ order }: { order: Order }) {
   );
 }
 
+function OrderLocation({ order }: { order: Order }) {
+  const normalizedDistrict = order.district?.replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim();
+  const highlightAbshway = order.governorate === "الفيوم" && normalizedDistrict === "ابشواي";
+
+  return (
+    <small className="block text-xs font-semibold text-[#89918c]">
+      {order.governorate}{order.district ? ` - ` : ""}
+      {order.district && highlightAbshway && (
+        <Star
+          aria-label="حجز من أبشواي"
+          className="mx-1 inline-block size-6 fill-blue-600 text-blue-600 align-middle"
+          strokeWidth={2.5}
+        />
+      )}
+      {order.district || ""}
+    </small>
+  );
+}
+
+function getOrderRegion(order: Order) {
+  return order.district ? `${order.governorate} - ${order.district}` : order.governorate;
+}
+
+const commonOrderRegions = [
+  "الفيوم - الفيوم",
+  "الفيوم - إبشواي",
+  "الفيوم - إطسا",
+  "الفيوم - سنورس",
+  "الفيوم - طامية",
+  "الفيوم - يوسف الصديق",
+];
+
 function getConfirmedOrders(orders: Order[]) {
   return orders.flatMap((order) => {
     if (!order.order_items?.length) {
@@ -420,11 +478,12 @@ export default function Home() {
   const [loginRole, setLoginRole] = useState<UserRole>("admin");
   const [staffNameInput, setStaffNameInput] = useState("");
   const [staffName, setStaffName] = useState("");
+  const [staffLastSeenAt, setStaffLastSeenAt] = useState<string | null>(null);
   const [adminError, setAdminError] = useState("");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [menuItems, setMenuItems] = useState<Item[]>([]);
-  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers" | "users" | "advertisements">(
+  const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers" | "users" | "advertisements" | "limited-offers">(
     "orders",
   );
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -462,6 +521,7 @@ export default function Home() {
   const [ordersDialog, setOrdersDialog] = useState<"today" | "confirmed" | null>(null);
   const [orderCategory, setOrderCategory] = useState("الكل");
   const [orderItem, setOrderItem] = useState("الكل");
+  const [orderRegion, setOrderRegion] = useState("الكل");
   const [orderPeriod, setOrderPeriod] = useState("all");
   const [orderStatus, setOrderStatus] = useState("الكل");
   const [currentTime, setCurrentTime] = useState(0);
@@ -484,6 +544,8 @@ export default function Home() {
   const [penaltyMessage, setPenaltyMessage] = useState("");
   const [advertisements, setAdvertisements] = useState<PublicAdvertisement[]>([]);
   const [featuredAdvertisement, setFeaturedAdvertisement] = useState<PublicAdvertisement | null>(null);
+  const [limitedOffers, setLimitedOffers] = useState<LimitedOffer[]>([]);
+  const [featuredLimitedOffer, setFeaturedLimitedOffer] = useState<LimitedOffer | null>(null);
 
   useEffect(() => {
     const restoreStaffName = window.setTimeout(() => {
@@ -507,18 +569,27 @@ export default function Home() {
         if (cancelled) return;
         const accepted = Array.isArray(data?.advertisements) ? data.advertisements : [];
         setAdvertisements(accepted);
+        const activeLimitedOffers = Array.isArray(data?.limited_offers) ? data.limited_offers : [];
+        setLimitedOffers(activeLimitedOffers);
         const featuredAdvertisements = accepted.filter((item: PublicAdvertisement) => item.featured);
-        if (featuredAdvertisements.length > 0 && adDisplaySettings.popup_enabled) {
+        const popupLimitedOffer = activeLimitedOffers.find((item: LimitedOffer) => item.show_in_popup);
+        if ((featuredAdvertisements.length > 0 || popupLimitedOffer) && adDisplaySettings.popup_enabled) {
           const storage = adDisplaySettings.popup_frequency === "visit" ? window.sessionStorage : window.localStorage;
-          const alreadyShown = storage.getItem("featured_advertisement_shown");
-          if (alreadyShown === "true") return;
-
-          const featured = featuredAdvertisements[0];
-          storage.setItem("featured_advertisement_shown", "true");
+          if (popupLimitedOffer) {
+            if (storage.getItem("limited_offer_popup_shown") === "true") return;
+            storage.setItem("limited_offer_popup_shown", "true");
+          } else {
+            if (storage.getItem("featured_advertisement_shown") === "true") return;
+            storage.setItem("featured_advertisement_shown", "true");
+          }
           openTimer = window.setTimeout(() => {
             if (cancelled) return;
-            setFeaturedAdvertisement(featured);
-            closeTimer = window.setTimeout(() => setFeaturedAdvertisement(null), adDisplaySettings.popup_duration_seconds * 1000);
+            if (popupLimitedOffer) setFeaturedLimitedOffer(popupLimitedOffer);
+            else if (featuredAdvertisements.length) setFeaturedAdvertisement(featuredAdvertisements[0]);
+            closeTimer = window.setTimeout(() => {
+              setFeaturedAdvertisement(null);
+              setFeaturedLimitedOffer(null);
+            }, adDisplaySettings.popup_duration_seconds * 1000);
           }, adDisplaySettings.popup_delay_seconds * 1000);
         }
       })
@@ -561,6 +632,8 @@ export default function Home() {
       ),
     ),
   ];
+  const orderRegions = [...new Set([...commonOrderRegions, ...orders.map(getOrderRegion)])].sort((first, second) => first.localeCompare(second, "ar"));
+  const staffOrderRegions = [...new Set(orders.map(getOrderRegion))].sort((first, second) => first.localeCompare(second, "ar"));
   const filteredOrders = orders.filter((order) => {
     const search = orderSearch.trim().toLowerCase();
     if (
@@ -570,6 +643,7 @@ export default function Home() {
         .some((value) => String(value).toLowerCase().includes(search))
     )
       return false;
+    if (orderRegion !== "الكل" && getOrderRegion(order) !== orderRegion) return false;
     const date = new Date(order.created_at);
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -613,7 +687,7 @@ export default function Home() {
       orderStatus !== "الكل" &&
       !order.order_items?.some(
         (item) =>
-          (!orderItem || item.name === orderItem) &&
+          (orderItem === "الكل" || item.name === orderItem) &&
           (item.item_status || order.status) === orderStatus,
       )
     ) return false;
@@ -735,6 +809,7 @@ export default function Home() {
         setAdminAuthenticated(Boolean(data?.authenticated));
         if (data?.authenticated) {
           setUserRole(data?.role || "admin");
+          if (data?.role === "staff") setStaffLastSeenAt(data.lastSeenAt || null);
           if (data?.staffName) {
             setStaffName(data.staffName);
             setStaffNameInput(data.staffName);
@@ -810,6 +885,14 @@ export default function Home() {
   useEffect(() => {
     if (!adminAuthenticated) return;
     const refreshOrders = () => {
+      if (userRole === "staff") {
+        fetch("/api/admin/session")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data?.lastSeenAt) setStaffLastSeenAt(data.lastSeenAt);
+          })
+          .catch(() => undefined);
+      }
       fetch("/api/admin/orders")
         .then((response) => (response.ok ? response.json() : null))
         .then((data) => {
@@ -825,7 +908,7 @@ export default function Home() {
     };
     const interval = window.setInterval(refreshOrders, 30000);
     return () => window.clearInterval(interval);
-  }, [adminAuthenticated]);
+  }, [adminAuthenticated, userRole]);
 
   const installApp = async () => {
     if (!installPrompt) {
@@ -1153,6 +1236,18 @@ export default function Home() {
     setAdminAuthenticated(true);
     setUserRole(result.role || loginRole);
     setAdminPin("");
+    if ((result.role || loginRole) === "staff") setStaffLastSeenAt(result.lastSeenAt || null);
+    const ordersResponse = await fetch("/api/admin/orders");
+    if (ordersResponse.ok) {
+      const visibleOrders = await ordersResponse.json();
+      if (Array.isArray(visibleOrders)) {
+        setOrders(visibleOrders);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        setTodayOrdersCount(visibleOrders.filter((order: Order) => new Date(order.created_at) >= today).length);
+        setConfirmedOrdersCount(getConfirmedOrders(visibleOrders).length);
+      }
+    }
     if ((result.role || loginRole) === "staff") {
       const name = result.staffName || "";
       if (!name) return setAdminError("هذا الموظف غير موجود");
@@ -1164,6 +1259,7 @@ export default function Home() {
     await fetch("/api/admin/session", { method: "DELETE" });
     setAdminAuthenticated(false);
     setUserRole(null);
+    setStaffLastSeenAt(null);
     setAdminTab("orders");
     setView("cashier");
   };
@@ -1766,6 +1862,12 @@ export default function Home() {
               </div>
             </div>
             {advertisements.length > 0 && <AdvertisementStrip advertisements={advertisements} config={adDisplaySettings} />}
+            <LimitedOfferExperience
+              offers={limitedOffers}
+              popupOffer={featuredLimitedOffer}
+              onPopupClose={() => setFeaturedLimitedOffer(null)}
+              onOffersChange={setLimitedOffers}
+            />
             <div className="grid min-w-0 gap-3 pr-1">
               {filteredItems.map((item) => (
                 <article
@@ -2065,7 +2167,10 @@ export default function Home() {
                 الطلبات اليوم
               </h1>
               {userRole === "staff" && staffName && (
-                <p className="mt-2 text-sm font-bold text-[#56816c]">الموظف: {staffName}</p>
+                <div className="mt-2 text-sm font-bold text-[#56816c]">
+                  <p>الموظف: {staffName}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#89918c]">آخر ظهور: {formatEmployeeLastSeen(staffLastSeenAt)}</p>
+                </div>
               )}
             </div>
             <div className="flex w-full flex-col gap-3 sm:w-auto sm:items-end">
@@ -2170,6 +2275,12 @@ export default function Home() {
                   >
                     الإعلانات
                   </button>
+                  <button
+                    onClick={() => setAdminTab("limited-offers")}
+                    className={`rounded-lg px-5 py-2.5 transition ${adminTab === "limited-offers" ? "bg-white text-[#173f3a] shadow-sm" : "text-[#72807a]"}`}
+                  >
+                    العروض المحدودة
+                  </button>
                 </>
               )}
               </div>
@@ -2202,7 +2313,9 @@ export default function Home() {
             )}
           </div>
           {adminTab === "employees" && userRole === "admin" ? (
-            <EmployeesManager employees={employees} setEmployees={setEmployees} onPrintTarget={printEmployeeTarget} />
+            <EmployeesManager employees={employees} setEmployees={setEmployees} orderRegions={orderRegions} onPrintTarget={printEmployeeTarget} />
+          ) : adminTab === "limited-offers" && userRole === "admin" ? (
+            <LimitedOfferManager />
           ) : adminTab === "marketing" && userRole === "admin" ? (
             <MarketingManager settings={settings} setSettings={setSettings} />
           ) : adminTab === "sellers" && userRole === "admin" ? (
@@ -2232,7 +2345,7 @@ export default function Home() {
                     {filteredOrders.length} نتيجة
                   </span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <select
                     value={orderCategory}
                     onChange={(event) => setOrderCategory(event.target.value)}
@@ -2241,6 +2354,16 @@ export default function Home() {
                     <option value="الكل">كل الفئات</option>
                     {categoryOptions.map((option) => (
                       <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={orderRegion}
+                    onChange={(event) => setOrderRegion(event.target.value)}
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل المناطق المسموح بها</option>
+                    {staffOrderRegions.map((region) => (
+                      <option key={region} value={region}>{region}</option>
                     ))}
                   </select>
                   <select
@@ -2314,9 +2437,7 @@ export default function Home() {
                     {order.customer_name && (
                       <small className="block text-sm font-semibold text-[#56816c]">{order.customer_name}</small>
                     )}
-                    <small className="block text-xs font-semibold text-[#89918c]">
-                      {order.governorate}{order.district ? ` - ${order.district}` : ""}
-                    </small>
+                    <OrderLocation order={order} />
                   </span>
                   <span className="text-base font-semibold leading-7 text-[#596963]">
                     <OrderItemsGrid
@@ -2362,7 +2483,7 @@ export default function Home() {
                     {filteredOrders.length} نتيجة
                   </span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <select
                     value={orderCategory}
                     onChange={(event) => setOrderCategory(event.target.value)}
@@ -2372,6 +2493,18 @@ export default function Home() {
                     {categoryOptions.map((option) => (
                       <option key={option} value={option}>
                         {option}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={orderRegion}
+                    onChange={(event) => setOrderRegion(event.target.value)}
+                    className="select-with-arrow h-11 rounded-xl border border-[#dedfd8] bg-white px-3 text-sm outline-none focus:border-[#173f3a]"
+                  >
+                    <option value="الكل">كل المناطق</option>
+                    {orderRegions.map((region) => (
+                      <option key={region} value={region}>
+                        {region}
                       </option>
                     ))}
                   </select>
@@ -2454,9 +2587,7 @@ export default function Home() {
                       {order.customer_name && (
                         <small className="block text-sm font-semibold text-[#56816c]">{order.customer_name}</small>
                       )}
-                      <small className="block text-xs font-semibold text-[#89918c]">
-                        {order.governorate}{order.district ? ` - ${order.district}` : ""}
-                      </small>
+                      <OrderLocation order={order} />
                     </span>
                     <span className="text-base font-semibold leading-7 text-[#596963]">
                       <OrderItemsGrid
@@ -2781,7 +2912,7 @@ function OrdersDialog({
                 <div className="min-w-0 text-sm font-bold text-[#596963]">
                   <a href={`tel:${order.phone}`} className="block">{order.phone}</a>
                   <span className="text-xs text-[#56816c]">{order.customer_name || "بدون اسم"}</span>
-                  <small className="block text-xs font-semibold text-[#89918c]">{order.governorate}{order.district ? ` - ${order.district}` : ""}</small>
+                  <OrderLocation order={order} />
                 </div>
                 <div className="min-w-0 text-sm font-semibold leading-6 text-[#596963]">
                   <OrderItemsGrid order={order} onStatusChange={onStatusChange} />
@@ -3265,68 +3396,168 @@ function ItemManager({
 function EmployeesManager({
   employees,
   setEmployees,
+  orderRegions,
   onPrintTarget,
 }: {
   employees: Employee[];
   setEmployees: (employees: Employee[]) => void;
+  orderRegions: string[];
   onPrintTarget: (name: string) => void;
 }) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [selectedOrderRegions, setSelectedOrderRegions] = useState<string[]>([]);
+  const [orderRegionMode, setOrderRegionMode] = useState<"include" | "exclude">("include");
   const [adminPassword, setAdminPassword] = useState("");
   const [message, setMessage] = useState("");
 
-  const save = async (event: React.FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    const refreshEmployees = () => {
+      fetch("/api/admin/employees")
+        .then((response) => response.ok ? response.json() : null)
+        .then((data) => {
+          if (Array.isArray(data)) setEmployees(data);
+        })
+        .catch(() => undefined);
+    };
+    refreshEmployees();
+    const interval = window.setInterval(refreshEmployees, 30000);
+    return () => window.clearInterval(interval);
+  }, [setEmployees]);
+
+  const saveEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const isAdminPassword = adminPassword.trim();
-    if (!name.trim() && !isAdminPassword) return setMessage("اكتب اسم الموظف");
-    const response = isAdminPassword
-      ? await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: isAdminPassword }) })
-      : await fetch("/api/admin/employees", { method: editingId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editingId, name: name.trim(), password }) });
+    if (!name.trim()) return setMessage("اكتب اسم الموظف");
+    if (orderRegionMode === "include" && !selectedOrderRegions.length) return setMessage("حدد منطقة طلب واحدة على الأقل ليتمكن الموظف من رؤيتها");
+    const wasEditing = editingId !== null;
+    const passwordChanged = Boolean(password.trim());
+    const response = await fetch("/api/admin/employees", {
+      method: editingId ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editingId, name: name.trim(), password, order_regions: selectedOrderRegions, order_region_mode: orderRegionMode }),
+    });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) return setMessage(result.error || "تعذر الحفظ");
-    if (isAdminPassword) {
-      setAdminPassword("");
-      return setMessage("تم تغيير كلمة سر الأدمن");
-    }
     setEmployees(editingId ? employees.map((employee) => employee.id === editingId ? result : employee) : [result, ...employees]);
     setEditingId(null);
     setName("");
     setPassword("");
-    setMessage(editingId ? "تم تعديل الموظف" : "تمت إضافة الموظف");
+    setSelectedOrderRegions([]);
+    setOrderRegionMode("include");
+    setMessage(wasEditing
+      ? passwordChanged ? "تم حفظ التعديلات وتغيير كلمة مرور الموظف" : "تم تعديل بيانات الموظف"
+      : "تمت إضافة الموظف");
+  };
+
+  const saveAdminPassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextPassword = adminPassword.trim();
+    if (nextPassword.length < 4) return setMessage("كلمة سر الأدمن يجب أن تكون 4 أحرف أو أرقام على الأقل");
+    const response = await fetch("/api/admin/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: nextPassword }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تغيير كلمة سر الأدمن");
+    setAdminPassword("");
+    setMessage("تم تغيير كلمة سر الأدمن");
   };
 
   const edit = (employee: Employee) => {
     setEditingId(employee.id);
     setName(employee.name);
     setPassword("");
+    setSelectedOrderRegions(employee.order_regions || []);
+    setOrderRegionMode(employee.order_region_mode || "include");
     setMessage("");
   };
 
-  const remove = async (id: number) => {
-    const response = await fetch("/api/admin/employees", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    if (!response.ok) return setMessage("تعذر إيقاف الموظف");
-    setEmployees(employees.filter((employee) => employee.id !== id));
+  const updateEmployeeActive = async (employee: Employee, active: boolean) => {
+    const response = await fetch("/api/admin/employees", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: employee.id,
+        name: employee.name,
+        order_regions: employee.order_regions || [],
+        order_region_mode: employee.order_region_mode || "include",
+        active,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) return setMessage(result.error || "تعذر تغيير حالة الموظف");
+    setEmployees(employees.map((entry) => entry.id === employee.id ? result : entry));
+    setMessage(active ? `تم تفعيل ${employee.name}` : `تم إيقاف ${employee.name}`);
   };
 
   return (
     <section className="max-w-3xl rounded-2xl border border-[#e0e1d9] bg-[#fffdf9] p-5">
       <p className="text-sm font-semibold text-[#c48738]">صلاحيات الدخول</p>
       <h2 className="font-display text-2xl font-bold text-[#173f3a]">إدارة الموظفين</h2>
-      <form onSubmit={save} className="mt-5 grid gap-3 rounded-xl bg-[#f6f6f1] p-4 sm:grid-cols-2">
+      <form onSubmit={saveEmployee} className="mt-5 grid gap-3 rounded-xl bg-[#f6f6f1] p-4 sm:grid-cols-2">
         <input value={name} onChange={(event) => setName(event.target.value)} placeholder="اسم الموظف" className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 outline-none focus:border-[#173f3a]" />
         <input type="password" minLength={4} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={editingId ? "كلمة سر جديدة اختيارية" : "كلمة سر الموظف"} className="h-11 rounded-xl border border-[#dedfd8] bg-white px-3 outline-none focus:border-[#173f3a]" />
+        <fieldset className="rounded-xl border border-[#dedfd8] bg-white p-3 sm:col-span-2">
+          <legend className="px-1 text-sm font-bold text-[#173f3a]">نطاق رؤية الطلبات</legend>
+          <div className="mb-3 grid gap-2 sm:grid-cols-2">
+            <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm font-semibold ${orderRegionMode === "include" ? "border-[#173f3a] bg-[#edf3ed] text-[#173f3a]" : "border-[#dedfd8] text-[#596963]"}`}>
+              <input type="radio" name="order-region-mode" checked={orderRegionMode === "include"} onChange={() => { setOrderRegionMode("include"); setSelectedOrderRegions((current) => current.includes("*") ? [] : current); }} />
+              يرى المناطق المحددة فقط
+            </label>
+            <label className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm font-semibold ${orderRegionMode === "exclude" ? "border-[#173f3a] bg-[#edf3ed] text-[#173f3a]" : "border-[#dedfd8] text-[#596963]"}`}>
+              <input type="radio" name="order-region-mode" checked={orderRegionMode === "exclude"} onChange={() => { setOrderRegionMode("exclude"); setSelectedOrderRegions((current) => current.filter((region) => region !== "*")); }} />
+              يرى كل المناطق ما عدا المحددة
+            </label>
+          </div>
+          <p className="mb-2 text-xs text-[#72807a]">{orderRegionMode === "include" ? "حدد المناطق التي تظهر طلباتها للموظف." : "حدد المناطق المستثناة. تركها دون تحديد يعني رؤية كل المناطق."}</p>
+          <div className="grid max-h-44 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+            {orderRegionMode === "include" && (
+              <label className="flex items-center gap-2 rounded-lg bg-[#f6f6f1] p-2 text-sm font-bold text-[#173f3a]">
+                <input type="checkbox" checked={selectedOrderRegions.includes("*")} onChange={(event) => setSelectedOrderRegions(event.target.checked ? ["*"] : [])} />
+                كل المناطق
+              </label>
+            )}
+            {orderRegions.map((region) => (
+              <label key={region} className={`flex items-center gap-2 rounded-lg p-2 text-sm ${orderRegionMode === "include" && selectedOrderRegions.includes("*") ? "text-[#a0a8a1]" : "text-[#596963]"}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedOrderRegions.includes(region)}
+                  disabled={orderRegionMode === "include" && selectedOrderRegions.includes("*")}
+                  onChange={(event) => setSelectedOrderRegions((current) => event.target.checked ? [...current, region] : current.filter((entry) => entry !== region))}
+                />
+                {region}
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <button className="h-11 rounded-xl bg-[#173f3a] font-bold text-white">{editingId ? "حفظ تعديل الموظف" : "إضافة موظف"}</button>
-        {editingId && <button type="button" onClick={() => { setEditingId(null); setName(""); setPassword(""); }} className="h-11 rounded-xl bg-white font-bold text-[#72807a]">إلغاء التعديل</button>}
+        {editingId && <button type="button" onClick={() => { setEditingId(null); setName(""); setPassword(""); setSelectedOrderRegions([]); setOrderRegionMode("include"); }} className="h-11 rounded-xl bg-white font-bold text-[#72807a]">إلغاء التعديل</button>}
       </form>
-      <form onSubmit={save} className="mt-4 grid gap-3 rounded-xl border border-[#e9e9e2] p-4 sm:grid-cols-[1fr_auto]">
+      <form onSubmit={saveAdminPassword} className="mt-4 grid gap-3 rounded-xl border border-[#e9e9e2] p-4 sm:grid-cols-[1fr_auto]">
         <input type="password" minLength={4} value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} placeholder="كلمة سر الأدمن الجديدة" className="h-11 rounded-xl border border-[#dedfd8] px-3 outline-none focus:border-[#173f3a]" />
         <button className="h-11 rounded-xl bg-[#c48738] px-5 font-bold text-white">تغيير كلمة سر الأدمن</button>
       </form>
       {message && <p className="mt-4 text-center text-sm font-semibold text-[#56816c]">{message}</p>}
       <div className="mt-5 grid gap-2">
-        {employees.map((employee) => <div key={employee.id} className="flex items-center gap-3 rounded-xl border border-[#ecece5] px-3 py-3"><span className="flex-1 font-semibold">{employee.name}</span><button type="button" onClick={() => onPrintTarget(employee.name)} aria-label={`طباعة تارجيت ${employee.name}`} title="طباعة التارجيت PDF" className="grid size-9 place-items-center rounded-lg bg-[#e4eee5] text-[#173f3a]"><Printer size={15} /></button><button onClick={() => edit(employee)} className="rounded-lg bg-[#edf0e9] px-3 py-2 text-xs font-bold text-[#173f3a]">تعديل</button><button onClick={() => void remove(employee.id)} className="rounded-lg bg-[#fff0d4] px-3 py-2 text-xs font-bold text-[#a66c20]">إيقاف</button></div>)}
+        {employees.map((employee) => (
+          <div key={employee.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#ecece5] px-3 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{employee.name}</p>
+                <p className={`mt-1 text-xs font-semibold ${employee.active ? "text-[#39704f]" : "text-[#a9584d]"}`}>{employee.active ? "الحساب نشط" : "الحساب موقوف"}</p>
+              <p className="mt-1 text-xs text-[#89918c]">آخر ظهور: {formatEmployeeLastSeen(employee.last_seen_at)}</p>
+            </div>
+            <span className="w-full text-xs text-[#72807a] sm:w-auto">
+              {employee.order_region_mode === "exclude" ? `يرى كل المناطق ما عدا: ${employee.order_regions?.join("، ") || "لا توجد استثناءات"}` : `يرى: ${employee.order_regions?.includes("*") ? "كل المناطق" : employee.order_regions?.join("، ") || "لا توجد مناطق محددة"}`}
+            </span>
+            <button type="button" onClick={() => onPrintTarget(employee.name)} aria-label={`طباعة تارجيت ${employee.name}`} title="طباعة التارجيت PDF" className="grid size-9 place-items-center rounded-lg bg-[#e4eee5] text-[#173f3a]"><Printer size={15} /></button>
+            <button onClick={() => edit(employee)} className="rounded-lg bg-[#edf0e9] px-3 py-2 text-xs font-bold text-[#173f3a]">تعديل</button>
+            <button onClick={() => void updateEmployeeActive(employee, !employee.active)} className={`rounded-lg px-3 py-2 text-xs font-bold ${employee.active ? "bg-[#fff0d4] text-[#a66c20]" : "bg-[#e4eee5] text-[#39704f]"}`}>
+              {employee.active ? "إيقاف" : "تفعيل"}
+            </button>
+          </div>
+        ))}
       </div>
     </section>
   );
