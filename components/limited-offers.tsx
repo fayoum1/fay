@@ -7,6 +7,9 @@ export type LimitedOffer = {
   title: string;
   description: string;
   image_url: string;
+  item_id: number | null;
+  item_name: string;
+  quantity_per_user: number | null;
   code_prefix: string;
   max_recipients: number | null;
   remaining: number | null;
@@ -46,6 +49,8 @@ type SignupCard = {
   district: string;
   village: string;
   offerTitle: string;
+  itemName: string;
+  quantityPerUser: number | null;
   registeredAt: string;
   expiresAt: string | null;
 };
@@ -63,12 +68,13 @@ function printSignupCard(card: SignupCard) {
   const address = [card.district, card.village].filter(Boolean).join("، ");
   const registeredAt = new Date(card.registeredAt).toLocaleString("ar-EG");
   const expiresAt = card.expiresAt ? new Date(card.expiresAt).toLocaleDateString("ar-EG") : "غير محدد";
+  const itemAllowance = card.quantityPerUser === null ? "الكمية لم تحدد بعد" : String(card.quantityPerUser);
   const printWindow = window.open("", "_blank");
   if (!printWindow) return false;
 
   printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>بطاقة الحجز ${escapeHtml(card.code)}</title><style>
     @page{size:A5 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;padding:24px;background:#f2f5f1;color:#173f3a;font-family:Tahoma,Arial,sans-serif}.card{max-width:720px;margin:24px auto;padding:30px;border:2px solid #173f3a;border-top:10px solid #c48738;background:#fffdf9}.brand{margin:0;color:#a66c20;font-size:14px}.title{margin:8px 0 22px;font-size:24px}.code{padding:12px 16px;background:#edf4ed;text-align:center;font: bold 32px monospace;direction:ltr}.details{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin-top:22px}.label{display:block;margin-bottom:4px;color:#72807a;font-size:12px}.value{font-size:16px;font-weight:bold}.notice{margin-top:18px;padding:12px;border:1px solid #e5c98c;background:#fff8e8;color:#76500f;font-size:12px;font-weight:bold;line-height:1.8}.footer{margin-top:16px;padding-top:12px;border-top:1px solid #d9ded7;color:#72807a;font-size:11px}@media print{body{padding:0;background:#fff}.card{margin:0;max-width:none;break-inside:avoid}}
-  </style></head><body><main class="card"><p class="brand">بطاقة حجز مستفيد</p><h1 class="title">${escapeHtml(card.offerTitle)}</h1><div class="code">${escapeHtml(card.code)}</div><section class="details"><div><span class="label">الاسم</span><span class="value">${escapeHtml(card.name)}</span></div><div><span class="label">رقم الهاتف</span><span class="value" dir="ltr">${escapeHtml(card.phone)}</span></div><div><span class="label">العنوان</span><span class="value">${escapeHtml(address)}</span></div><div><span class="label">تاريخ الحجز</span><span class="value">${escapeHtml(registeredAt)}</span></div><div><span class="label">صالحة حتى</span><span class="value">${escapeHtml(expiresAt)}</span></div></section><p class="notice">${escapeHtml(signupCardNotice)}</p><p class="footer">رقم البطاقة الفريد: ${escapeHtml(card.code)}</p></main></body></html>`);
+  </style></head><body><main class="card"><p class="brand">بطاقة حجز مستفيد</p><h1 class="title">${escapeHtml(card.offerTitle)}</h1><div class="code">${escapeHtml(card.code)}</div><section class="details"><div><span class="label">الاسم</span><span class="value">${escapeHtml(card.name)}</span></div><div><span class="label">رقم الهاتف</span><span class="value" dir="ltr">${escapeHtml(card.phone)}</span></div><div><span class="label">العنوان</span><span class="value">${escapeHtml(address)}</span></div><div><span class="label">الصنف المخصص</span><span class="value">${escapeHtml(card.itemName)} · ${escapeHtml(itemAllowance)}</span></div><div><span class="label">تاريخ الحجز</span><span class="value">${escapeHtml(registeredAt)}</span></div><div><span class="label">صالحة حتى</span><span class="value">${escapeHtml(expiresAt)}</span></div></section><p class="notice">${escapeHtml(signupCardNotice)}</p><p class="footer">رقم البطاقة الفريد: ${escapeHtml(card.code)}</p></main></body></html>`);
   printWindow.document.close();
   window.setTimeout(() => {
     printWindow.focus();
@@ -157,6 +163,7 @@ export function LimitedOfferExperience({ offers, popupOffer, selectedOffer, onPo
               <div className="p-4 sm:p-5">
                 <h2 className="font-display text-xl font-bold text-[#173f3a]">{popupOffer.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-[#596963]">{popupOffer.description}</p>
+                <p className="mt-2 text-xs font-bold text-[#39704f]">الصنف: {popupOffer.item_name} · {popupOffer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `الكمية لكل مستفيد: ${popupOffer.quantity_per_user}`}</p>
                 <span className="mt-3 inline-flex rounded-md bg-[#39704f] px-3 py-2 text-xs font-black text-white">
                   {popupOffer.remaining === null ? "التسجيل متاح" : `متبقي ${popupOffer.remaining} من ${popupOffer.max_recipients}`}
                 </span>
@@ -174,6 +181,7 @@ export function LimitedOfferExperience({ offers, popupOffer, selectedOffer, onPo
             <img src={selectedOffer.image_url} alt="" className="mb-4 max-h-48 w-full rounded-md bg-[#eef0ea] object-contain" />
             <p className="text-xs font-bold text-[#a66c20]">تسجيل عرض محدود</p>
             <h2 className="mt-1 font-display text-2xl font-bold text-[#173f3a]">{selectedOffer.title}</h2>
+            <p className="mt-2 text-sm font-bold text-[#39704f]">الصنف المخصص: {selectedOffer.item_name} · {selectedOffer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `الكمية لكل مستفيد: ${selectedOffer.quantity_per_user}`}</p>
             {successCard ? (
               <div className="mt-5 rounded-lg border border-[#cde9d5] bg-[#edf9f0] p-5 text-center">
                 <p className="text-sm font-bold text-[#39704f]">تم الحجز بنجاح. هذه بطاقة الحجز الخاصة بك</p>
@@ -182,6 +190,7 @@ export function LimitedOfferExperience({ offers, popupOffer, selectedOffer, onPo
                   <div><dt className="text-[#72807a]">الاسم</dt><dd className="mt-1 font-bold">{successCard.name}</dd></div>
                   <div><dt className="text-[#72807a]">رقم الهاتف</dt><dd className="mt-1 font-bold" dir="ltr">{successCard.phone}</dd></div>
                   <div><dt className="text-[#72807a]">العنوان</dt><dd className="mt-1 font-bold">{[successCard.district, successCard.village].filter(Boolean).join("، ")}</dd></div>
+                  <div><dt className="text-[#72807a]">الصنف والكمية المخصصة</dt><dd className="mt-1 font-bold">{successCard.itemName} · {successCard.quantityPerUser === null ? "الكمية لم تحدد بعد" : successCard.quantityPerUser}</dd></div>
                   <div><dt className="text-[#72807a]">تاريخ الحجز</dt><dd className="mt-1 font-bold">{new Date(successCard.registeredAt).toLocaleDateString("ar-EG")}</dd></div>
                   <div><dt className="text-[#72807a]">صلاحية البطاقة حتى</dt><dd className="mt-1 font-bold">{successCard.expiresAt ? new Date(successCard.expiresAt).toLocaleDateString("ar-EG") : "غير محدد"}</dd></div>
                 </dl>
@@ -222,10 +231,13 @@ export function LimitedOfferExperience({ offers, popupOffer, selectedOffer, onPo
 
 export function LimitedOfferManager() {
   const [offers, setOffers] = useState<AdminOffer[]>([]);
+  const [items, setItems] = useState<Array<{ id: number; name: string }>>([]);
   const [signups, setSignups] = useState<OfferSignup[]>([]);
   const [editingOfferId, setEditingOfferId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [quantityPerUser, setQuantityPerUser] = useState("");
   const [prefix, setPrefix] = useState("A");
   const [maxRecipients, setMaxRecipients] = useState("");
   const [selectedDistricts, setSelectedDistricts] = useState<string[]>([]);
@@ -242,6 +254,7 @@ export function LimitedOfferManager() {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) return setMessage(result.error || "تعذر تحميل العروض");
     setOffers(result.offers || []);
+    setItems(result.items || []);
     setSignups(result.signups || []);
   };
 
@@ -254,6 +267,8 @@ export function LimitedOfferManager() {
     setEditingOfferId(null);
     setTitle("");
     setDescription("");
+    setItemId("");
+    setQuantityPerUser("");
     setPrefix("A");
     setMaxRecipients("");
     setSelectedDistricts([]);
@@ -274,6 +289,8 @@ export function LimitedOfferManager() {
     setEditingOfferId(offer.id);
     setTitle(offer.title);
     setDescription(offer.description || "");
+    setItemId(offer.item_id === null ? "" : String(offer.item_id));
+    setQuantityPerUser(offer.quantity_per_user === null ? "" : String(offer.quantity_per_user));
     setPrefix(offer.code_prefix);
     setMaxRecipients(offer.max_recipients === null ? "" : String(offer.max_recipients));
     setSelectedDistricts(offer.allowed_districts || []);
@@ -294,6 +311,8 @@ export function LimitedOfferManager() {
     if (editingOfferId !== null) form.set("id", String(editingOfferId));
     form.set("title", title);
     form.set("description", description);
+    form.set("item_id", itemId);
+    form.set("quantity_per_user", quantityPerUser);
     form.set("code_prefix", prefix);
     form.set("max_recipients", maxRecipients);
     form.set("allowed_districts", JSON.stringify(selectedDistricts));
@@ -347,6 +366,8 @@ export function LimitedOfferManager() {
         <form onSubmit={saveOffer} className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1 text-sm font-bold text-[#173f3a]">عنوان العرض<input required maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} className="h-11 rounded-md border border-[#d9ded7] px-3 font-normal" /></label>
           <label className="grid gap-1 text-sm font-bold text-[#173f3a]">بادئة الكود<input required maxLength={8} pattern="[A-Za-z0-9_-]{1,8}" value={prefix} onChange={(event) => setPrefix(event.target.value)} className="h-11 rounded-md border border-[#d9ded7] px-3 font-normal" /></label>
+          <label className="grid gap-1 text-sm font-bold text-[#173f3a]">الصنف المخصص للمستفيد<select required value={itemId} onChange={(event) => setItemId(event.target.value)} className="h-11 rounded-md border border-[#d9ded7] bg-white px-3 font-normal"><option value="">اختر الصنف</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="grid gap-1 text-sm font-bold text-[#173f3a]">الكمية لكل مستفيد (اختياري)<input type="number" min="1" step="1" value={quantityPerUser} onChange={(event) => setQuantityPerUser(event.target.value)} placeholder="الكمية لم تحدد بعد" className="h-11 rounded-md border border-[#d9ded7] px-3 font-normal" /></label>
           <label className="grid gap-1 text-sm font-bold text-[#173f3a] sm:col-span-2">تفاصيل العرض<textarea maxLength={600} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-20 rounded-md border border-[#d9ded7] p-3 font-normal" /></label>
           <label className="grid gap-1 text-sm font-bold text-[#173f3a]">الحد الأقصى للمستفيدين<input type="number" min="1" value={maxRecipients} onChange={(event) => setMaxRecipients(event.target.value)} placeholder="اتركه فارغًا لعدد غير محدود" className="h-11 rounded-md border border-[#d9ded7] px-3 font-normal" /></label>
           <label className="grid gap-1 text-sm font-bold text-[#173f3a]">صورة الإعلان<input required={editingOfferId === null} type="file" accept="image/*" onChange={(event) => setImage(event.target.files?.[0] || null)} className="min-h-11 rounded-md border border-[#d9ded7] p-2 text-xs font-normal" />{editingOfferId !== null && <span className="text-[11px] font-normal text-[#89918c]">اتركه فارغًا للاحتفاظ بالصورة الحالية</span>}</label>
@@ -371,7 +392,7 @@ export function LimitedOfferManager() {
               <div className="grid sm:grid-cols-[180px_1fr]">
                 <img src={offer.image_url} alt="" className="h-40 w-full bg-[#eef0ea] object-cover sm:h-full" />
                 <div className="p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-[#173f3a]">{offer.title}</h3><p className="mt-1 text-xs text-[#72807a]">الكود: {offer.code_prefix}1 · {offerSignups.length} تسجيل · {remaining === null ? "دون حد" : `بقي ${remaining}`}</p><p className="mt-1 text-xs text-[#72807a]">المراكز: {offer.allowed_districts.join("، ")}</p><p className={`mt-2 text-xs font-bold ${offer.public_visibility ? "text-[#39704f]" : "text-[#a9584d]"}`}>{offer.public_visibility ? "ظاهر للزوار الآن" : `غير ظاهر: ${offer.visibility_reason}`}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label={`حالة العرض ${offer.title}`} value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value)} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm"><option value="draft">مسودة</option><option value="active">نشط</option><option value="paused">متوقف</option><option value="ended">منتهي</option></select><button type="button" onClick={() => editOffer(offer)} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">تعديل</button><button type="button" onClick={() => void deleteOffer(offer)} className="h-10 rounded-md border border-[#dfbbb5] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div></div>
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-[#173f3a]">{offer.title}</h3><p className="mt-1 text-xs font-bold text-[#39704f]">الصنف: {offer.item_name || "غير محدد"} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `لكل مستفيد ${offer.quantity_per_user}`}</p><p className="mt-1 text-xs text-[#72807a]">الكود: {offer.code_prefix}1 · {offerSignups.length} تسجيل · {remaining === null ? "دون حد" : `بقي ${remaining}`}</p><p className="mt-1 text-xs text-[#72807a]">المراكز: {offer.allowed_districts.join("، ")}</p><p className={`mt-2 text-xs font-bold ${offer.public_visibility ? "text-[#39704f]" : "text-[#a9584d]"}`}>{offer.public_visibility ? "ظاهر للزوار الآن" : `غير ظاهر: ${offer.visibility_reason}`}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label={`حالة العرض ${offer.title}`} value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value)} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm"><option value="draft">مسودة</option><option value="active">نشط</option><option value="paused">متوقف</option><option value="ended">منتهي</option></select><button type="button" onClick={() => editOffer(offer)} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">تعديل</button><button type="button" onClick={() => void deleteOffer(offer)} className="h-10 rounded-md border border-[#dfbbb5] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div></div>
                   <div className="mt-4 grid gap-2">
                     {offerSignups.map((signup) => (
                       <div key={signup.id} className="grid gap-2 rounded-md border border-[#e6e9e4] bg-[#fafbf9] p-3 sm:grid-cols-[1fr_auto] sm:items-center">

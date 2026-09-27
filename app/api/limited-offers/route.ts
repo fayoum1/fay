@@ -17,7 +17,7 @@ export async function GET() {
   const now = new Date().toISOString();
   const { data, error } = await client
     .from("limited_offers")
-    .select("id,title,description,image_url,code_prefix,max_recipients,next_code_number,allowed_districts,show_in_scroll,show_in_popup,starts_at,ends_at")
+    .select("id,title,description,image_url,item_id,item_name,quantity_per_user,code_prefix,max_recipients,next_code_number,allowed_districts,show_in_scroll,show_in_popup,starts_at,ends_at")
     .eq("status", "active")
     .or(`starts_at.is.null,starts_at.lte.${now}`)
     .or(`ends_at.is.null,ends_at.gte.${now}`)
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
   const { data: offer, error: offerError } = await client
     .from("limited_offers")
-    .select("id,title,allowed_districts,status,starts_at,ends_at,max_recipients,next_code_number")
+    .select("id,title,item_name,quantity_per_user,allowed_districts,status,starts_at,ends_at,max_recipients,next_code_number")
     .eq("id", offerId)
     .eq("status", "active")
     .maybeSingle();
@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
     district,
     village,
     offerTitle: offer.title,
+    itemName: offer.item_name,
+    quantityPerUser: offer.quantity_per_user,
     registeredAt: signup?.created_at || new Date().toISOString(),
     expiresAt: offer.ends_at,
   }, { status: 201 });

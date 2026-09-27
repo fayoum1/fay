@@ -19,11 +19,12 @@ export async function GET(request: NextRequest) {
   if (await getAdminRole(request) !== "admin") return unauthorized();
   const client = database();
   if (!client) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
-  const [{ data: offers, error: offersError }, { data: signups, error: signupsError }] = await Promise.all([
+  const [{ data: offers, error: offersError }, { data: signups, error: signupsError }, { data: items, error: itemsError }] = await Promise.all([
     client.from("limited_offers").select("*").order("created_at", { ascending: false }),
     client.from("limited_offer_signups").select("*").order("created_at", { ascending: false }),
+    client.from("items").select("id,name").eq("active", true).order("name"),
   ]);
-  if (offersError || signupsError) return NextResponse.json({ error: offersError?.message || signupsError?.message }, { status: 500 });
+  if (offersError || signupsError || itemsError) return NextResponse.json({ error: offersError?.message || signupsError?.message || itemsError?.message }, { status: 500 });
   const now = Date.now();
   const diagnosedOffers = (offers || []).map((offer) => {
     const startsAt = offer.starts_at ? new Date(offer.starts_at).getTime() : null;
@@ -46,7 +47,7 @@ export async function GET(request: NextRequest) {
     const { data } = await client.storage.from("limited-offer-attachments").createSignedUrl(signup.attachment_path, 3600);
     return { ...signup, attachment_url: data?.signedUrl || null };
   }));
-  return NextResponse.json({ offers: diagnosedOffers, signups: signupsWithFiles });
+  return NextResponse.json({ offers: diagnosedOffers, signups: signupsWithFiles, items: items || [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -56,6 +57,9 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const title = String(form.get("title") || "").trim().slice(0, 120);
   const description = String(form.get("description") || "").trim().slice(0, 600);
+  const itemId = Number(form.get("item_id"));
+  const quantityPerUserText = String(form.get("quantity_per_user") || "").trim();
+  const quantityPerUser = quantityPerUserText ? Number(quantityPerUserText) : null;
   const codePrefix = String(form.get("code_prefix") || "A").trim().slice(0, 8);
   const maxRecipientsText = String(form.get("max_recipients") || "").trim();
   const maxRecipients = maxRecipientsText ? Number(maxRecipientsText) : null;
@@ -73,9 +77,11 @@ export async function POST(request: NextRequest) {
   const startsAt = startsAtText ? new Date(startsAtText) : null;
   const endsAt = endsAtText ? new Date(endsAtText) : null;
   const image = form.get("image");
-  if (!title || allowedDistricts.length === 0 || !/^[A-Za-z0-9_-]{1,8}$/.test(codePrefix) || (maxRecipients !== null && (!Number.isInteger(maxRecipients) || maxRecipients < 1)) || (!showInScroll && !showInPopup)) {
-    return NextResponse.json({ error: "أكمل العنوان والمراكز والعدد أو مكان ظهور العرض بشكل صحيح" }, { status: 400 });
+  if (!title || !Number.isInteger(itemId) || itemId < 1 || (quantityPerUser !== null && (!Number.isInteger(quantityPerUser) || quantityPerUser < 1)) || allowedDistricts.length === 0 || !/^[A-Za-z0-9_-]{1,8}$/.test(codePrefix) || (maxRecipients !== null && (!Number.isInteger(maxRecipients) || maxRecipients < 1)) || (!showInScroll && !showInPopup)) {
+    return NextResponse.json({ error: "أكمل عنوان العرض والصنف والمراكز، أو أدخل كمية صحيحة" }, { status: 400 });
   }
+  const { data: item, error: itemError } = await client.from("items").select("id,name").eq("id", itemId).eq("active", true).maybeSingle();
+  if (itemError || !item) return NextResponse.json({ error: "اختر صنفًا نشطًا من قائمة الأصناف" }, { status: 400 });
   if (startsAt && Number.isNaN(startsAt.getTime())) return NextResponse.json({ error: "تاريخ بداية العرض غير صحيح" }, { status: 400 });
   if (endsAt && (Number.isNaN(endsAt.getTime()) || (startsAt && endsAt <= startsAt))) return NextResponse.json({ error: "تاريخ نهاية العرض يجب أن يكون بعد بدايته" }, { status: 400 });
   if (!(image instanceof File) || image.size === 0 || !image.type.startsWith("image/") || image.size > 5 * 1024 * 1024) {
@@ -91,6 +97,9 @@ export async function POST(request: NextRequest) {
     title,
     description,
     image_url: imageUrl,
+    item_id: item.id,
+    item_name: item.name,
+    quantity_per_user: quantityPerUser,
     code_prefix: codePrefix,
     max_recipients: maxRecipients,
     allowed_districts: allowedDistricts,
@@ -116,6 +125,9 @@ export async function PATCH(request: NextRequest) {
     const id = Number(form.get("id"));
     const title = String(form.get("title") || "").trim().slice(0, 120);
     const description = String(form.get("description") || "").trim().slice(0, 600);
+    const itemId = Number(form.get("item_id"));
+    const quantityPerUserText = String(form.get("quantity_per_user") || "").trim();
+    const quantityPerUser = quantityPerUserText ? Number(quantityPerUserText) : null;
     const codePrefix = String(form.get("code_prefix") || "").trim().slice(0, 8);
     const maxRecipientsText = String(form.get("max_recipients") || "").trim();
     const maxRecipients = maxRecipientsText ? Number(maxRecipientsText) : null;
@@ -133,9 +145,11 @@ export async function PATCH(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: "اختر المراكز بشكل صحيح" }, { status: 400 });
     }
-    if (!Number.isInteger(id) || !title || !/^[A-Za-z0-9_-]{1,8}$/.test(codePrefix) || allowedDistricts.length === 0 || (maxRecipients !== null && (!Number.isInteger(maxRecipients) || maxRecipients < 1)) || (!showInScroll && !showInPopup)) {
-      return NextResponse.json({ error: "راجع عنوان العرض والمراكز والعدد ومواضع ظهوره" }, { status: 400 });
+    if (!Number.isInteger(id) || !title || !Number.isInteger(itemId) || itemId < 1 || (quantityPerUser !== null && (!Number.isInteger(quantityPerUser) || quantityPerUser < 1)) || !/^[A-Za-z0-9_-]{1,8}$/.test(codePrefix) || allowedDistricts.length === 0 || (maxRecipients !== null && (!Number.isInteger(maxRecipients) || maxRecipients < 1)) || (!showInScroll && !showInPopup)) {
+      return NextResponse.json({ error: "راجع عنوان العرض والصنف والمراكز أو أدخل كمية صحيحة" }, { status: 400 });
     }
+    const { data: item, error: itemError } = await client.from("items").select("id,name").eq("id", itemId).eq("active", true).maybeSingle();
+    if (itemError || !item) return NextResponse.json({ error: "اختر صنفًا نشطًا من قائمة الأصناف" }, { status: 400 });
     if (startsAt && Number.isNaN(startsAt.getTime())) return NextResponse.json({ error: "تاريخ بداية العرض غير صحيح" }, { status: 400 });
     if (endsAt && (Number.isNaN(endsAt.getTime()) || (startsAt && endsAt <= startsAt))) return NextResponse.json({ error: "تاريخ نهاية العرض يجب أن يكون بعد بدايته" }, { status: 400 });
     if (image instanceof File && image.size > 0 && (!image.type.startsWith("image/") || image.size > 5 * 1024 * 1024)) {
@@ -163,6 +177,9 @@ export async function PATCH(request: NextRequest) {
       title,
       description,
       image_url: imageUrl,
+      item_id: item.id,
+      item_name: item.name,
+      quantity_per_user: quantityPerUser,
       code_prefix: codePrefix,
       max_recipients: maxRecipients,
       allowed_districts: allowedDistricts,

@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
   }));
     const { data: limitedOffers, error: limitedOffersError } = await client
       .from("limited_offers")
-      .select("id,title,description,image_url,code_prefix,max_recipients,next_code_number,allowed_districts,show_in_scroll,show_in_popup,starts_at,ends_at")
+      .select("id,title,description,image_url,item_id,item_name,quantity_per_user,code_prefix,max_recipients,next_code_number,allowed_districts,show_in_scroll,show_in_popup,starts_at,ends_at")
       .eq("status", "active")
       .or(`starts_at.is.null,starts_at.lte.${now}`)
       .or(`ends_at.is.null,ends_at.gte.${now}`)

@@ -3655,22 +3655,23 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
 }) {
   const feed: MarketingFeedItem[] = [];
   for (let index = 0; index < Math.max(advertisements.length, offers.length); index += 1) {
-    if (advertisements[index]) feed.push({ kind: "advertisement", value: advertisements[index] });
     if (offers[index]) feed.push({ kind: "offer", value: offers[index] });
+    if (advertisements[index]) feed.push({ kind: "advertisement", value: advertisements[index] });
   }
   const isManualMode = config.rotation_mode === "carousel";
-  const animationDuration = `${Math.max(config.duration_seconds, 5)}s`;
+  const slideTransitionMs = 500;
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isTouching, setIsTouching] = useState(false);
   const visibleIndex = feed.length ? activeIndex % feed.length : 0;
 
   useEffect(() => {
-    if (!isManualMode || !config.auto_play || feed.length < 2) return;
+    if (!config.auto_play || isTouching || feed.length < 2) return;
     const timer = window.setInterval(() => {
       setActiveIndex((current) => (current + 1) % feed.length);
-    }, config.duration_seconds * 1000);
+    }, Math.max(config.duration_seconds, 5) * 1000 + slideTransitionMs);
 
     return () => window.clearInterval(timer);
-  }, [feed.length, config.auto_play, config.duration_seconds, isManualMode]);
+  }, [feed.length, config.auto_play, config.duration_seconds, isTouching]);
 
   const goToPrevious = () => {
     if (!feed.length) return;
@@ -3691,6 +3692,7 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
           <span className="min-w-0 space-y-1">
             <span className="block text-[10px] font-bold text-[#a66c20]">عرض محدود</span>
             <span className="block truncate text-sm font-bold text-[#173f3a]">{offer.title}</span>
+            <span className="block truncate text-xs font-bold text-[#39704f]">{offer.item_name} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `${offer.quantity_per_user} لكل مستفيد`}</span>
             <span className="block line-clamp-2 text-xs leading-5 text-[#596963]">{offer.description}</span>
             <span className="inline-flex rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white">
               {offer.remaining === null ? "التسجيل متاح" : offer.remaining === 0 ? "اكتمل العدد" : `متبقي ${offer.remaining} من ${offer.max_recipients}`}
@@ -3724,8 +3726,8 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
     ? <button type="button" onClick={() => onOfferSelect(item.value)} disabled={item.value.remaining === 0} className="mt-2 h-10 w-full rounded-md bg-[#173f3a] text-sm font-bold text-white disabled:opacity-50 sm:hidden">احجز العرض</button>
     : <Link href={`/ads/${item.value.id}`} className="mt-2 flex h-10 items-center justify-center rounded-md bg-[#173f3a] text-sm font-bold text-white sm:hidden">عرض الإعلان</Link>;
 
-  const renderFeedItem = (item: MarketingFeedItem, carousel: boolean) => (
-    <div key={`${item.kind}-${item.value.id}`} className={carousel ? "w-full shrink-0 px-0.5" : "w-[min(96vw,600px)] shrink-0"}>
+  const renderFeedItem = (item: MarketingFeedItem) => (
+    <div key={`${item.kind}-${item.value.id}`} dir="rtl" className="w-full shrink-0 px-0.5">
       {renderCard(item)}
       {renderAction(item)}
     </div>
@@ -3735,31 +3737,28 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
 
   return (
     <section className="my-2 overflow-hidden" aria-label="الإعلانات والعروض المحدودة">
-      <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">إعلانات وعروض محدودة</h2>
-      {isManualMode && feed.length > 1 && (
+      <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">{offers.length && advertisements.length ? "إعلانات وعروض محدودة" : offers.length ? "عروض محدودة" : "إعلانات ممولة"}</h2>
+      {feed.length > 1 && (isManualMode || !config.auto_play) && (
         <div className="mb-2 flex items-center justify-end gap-2 px-1">
           <button type="button" onClick={goToPrevious} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">السابق</button>
           <button type="button" onClick={goToNext} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">التالي</button>
         </div>
       )}
 
-      {isManualMode ? (
-        <div className="relative overflow-hidden rounded-md border border-[#dfe5dc] bg-[#f5f7f4] p-1">
-          <div
-            className="flex transition-transform duration-500 ease-out"
-            style={{ transform: `translateX(-${visibleIndex * 100}%)` }}
-          >
-            {feed.map((item) => renderFeedItem(item, true))}
-          </div>
-        </div>
-      ) : (
+      <div
+        className="relative overflow-hidden rounded-md border border-[#dfe5dc] bg-[#f5f7f4] p-1"
+        onTouchStart={() => setIsTouching(true)}
+        onTouchEnd={() => setIsTouching(false)}
+        onTouchCancel={() => setIsTouching(false)}
+      >
         <div
-          className="advertisement-strip flex w-max min-w-full items-start gap-3"
-          style={{ animationDuration, animationPlayState: config.auto_play ? "running" : "paused" }}
+          dir="ltr"
+          className="flex w-full transition-transform ease-out"
+          style={{ transform: `translateX(-${visibleIndex * 100}%)`, transitionDuration: `${slideTransitionMs}ms` }}
         >
-          {feed.map((item) => renderFeedItem(item, false))}
+          {feed.map((item) => renderFeedItem(item))}
         </div>
-      )}
+      </div>
     </section>
   );
 }
@@ -3839,14 +3838,36 @@ function AdvertisementDisplayControls({ value, onChange }: { value: Advertisemen
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         <label className="grid gap-1 text-xs font-bold text-[#596963]">
           مدة عرض كل إعلان (ثانية)
-          <input
-            type="number"
-            min={5}
-            max={60}
-            value={value.duration_seconds}
-            onChange={(event) => updateField("duration_seconds", Math.min(60, Math.max(5, Number(event.target.value) || 5)))}
-            className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
-          />
+          <span className="flex h-11 items-stretch overflow-hidden rounded-md border border-[#d9ded7] bg-white">
+            <button
+              type="button"
+              onClick={() => updateField("duration_seconds", Math.max(5, value.duration_seconds - 1))}
+              disabled={value.duration_seconds <= 5}
+              aria-label="تقليل مدة عرض الإعلان"
+              className="grid w-11 shrink-0 place-items-center border-l border-[#d9ded7] text-[#173f3a] disabled:opacity-40"
+            >
+              <Minus size={16} />
+            </button>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={5}
+              max={60}
+              step={1}
+              value={value.duration_seconds}
+              onChange={(event) => updateField("duration_seconds", Math.min(60, Math.max(5, Number(event.target.value) || 5)))}
+              className="h-full min-w-0 flex-1 bg-transparent px-3 text-center text-sm font-normal outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => updateField("duration_seconds", Math.min(60, value.duration_seconds + 1))}
+              disabled={value.duration_seconds >= 60}
+              aria-label="زيادة مدة عرض الإعلان"
+              className="grid w-11 shrink-0 place-items-center border-r border-[#d9ded7] text-[#173f3a] disabled:opacity-40"
+            >
+              <Plus size={16} />
+            </button>
+          </span>
         </label>
         <label className="grid gap-1 text-xs font-bold text-[#596963]">
           طريقة العرض
@@ -3855,8 +3876,8 @@ function AdvertisementDisplayControls({ value, onChange }: { value: Advertisemen
             onChange={(event) => updateField("rotation_mode", event.target.value as AdvertisementRotationMode)}
             className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm font-normal"
           >
-            <option value="scroll">تمرير مستمر</option>
-            <option value="carousel">كروت قابلة للتمرير</option>
+            <option value="scroll">تبديل تلقائي بين البطاقات</option>
+            <option value="carousel">بطاقات مع أزرار التنقل</option>
           </select>
         </label>
         <label className="flex items-center justify-between rounded-md border border-[#d9ded7] bg-white px-3 py-2 text-xs font-bold text-[#596963]">
