@@ -2012,8 +2012,8 @@ export default function Home() {
       )}
       {view === "cashier" ? (
         <div className="mx-auto grid w-full min-w-0 max-w-[1440px] gap-5 overflow-x-hidden px-3 py-5 sm:gap-8 sm:px-5 sm:py-8 lg:grid-cols-[1fr_380px] lg:px-10">
-          <section className="min-w-0 max-w-full overflow-x-hidden">
-            <div className="flex flex-col gap-1.5">
+          <section className="flex min-w-0 max-w-full flex-col overflow-x-hidden">
+            <div className="order-0 flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 {settings.visitor_message && (
                   <div className="h-12 min-w-0 flex-1 overflow-hidden rounded-xl border border-[#dedfd8] bg-white text-[#173f3a]" aria-label="رسالة للزوار">
@@ -2042,8 +2042,9 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <div className="sticky top-[78px] z-20 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-b border-[#dedfd8] bg-[#f7f6f2] px-0 pb-0.5 pt-1 shadow-sm [scrollbar-width:thin] [touch-action:pan-x] sm:top-[84px] lg:top-0">
-                <div className="flex w-max min-w-full flex-nowrap gap-2">
+            </div>
+            <div className="order-2 sticky top-[78px] z-20 w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain border-b border-[#dedfd8] bg-[#f7f6f2] px-0 pb-0.5 pt-1 shadow-sm [scrollbar-width:thin] [touch-action:pan-x] sm:order-1 sm:top-[84px] lg:top-0">
+              <div className="flex w-max min-w-full flex-nowrap gap-2">
                 <button
                   type="button"
                   onClick={() => { window.location.href = "/sell"; }}
@@ -2073,16 +2074,17 @@ export default function Home() {
                     {entry}
                   </button>
                 ))}
-                </div>
               </div>
             </div>
             {(advertisements.length > 0 || limitedOffers.some((offer) => offer.show_in_scroll)) && (
-              <AdvertisementStrip
-                advertisements={advertisements}
-                offers={limitedOffers.filter((offer) => offer.show_in_scroll)}
-                onOfferSelect={setSelectedLimitedOffer}
-                config={adDisplaySettings}
-              />
+              <div className="order-1 sm:order-2">
+                <AdvertisementStrip
+                  advertisements={advertisements}
+                  offers={limitedOffers.filter((offer) => offer.show_in_scroll)}
+                  onOfferSelect={setSelectedLimitedOffer}
+                  config={adDisplaySettings}
+                />
+              </div>
             )}
             <LimitedOfferExperience
               offers={limitedOffers}
@@ -3966,7 +3968,7 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
     const advertisement = item.value;
     return (
       <article className="overflow-hidden rounded-xl border border-[#dfe5dc] bg-white shadow-sm">
-        <div className="grid h-[48dvh] min-h-[240px] max-h-[560px] w-full place-items-center overflow-hidden bg-[#18201e] sm:h-[52dvh] sm:min-h-[320px]">
+        <div className="grid h-[60dvh] min-h-[320px] max-h-[680px] w-full place-items-center overflow-hidden bg-[#18201e] sm:h-[52dvh] sm:min-h-[320px] sm:max-h-[560px]">
           {advertisement.media_type === "video" && advertisement.video_url ? (
             <video src={advertisement.video_url} muted autoPlay loop playsInline preload="metadata" className="size-full object-contain" />
           ) : advertisement.image_url ? (

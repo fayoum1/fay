@@ -271,6 +271,7 @@ export function LimitedOfferManager() {
   const [offers, setOffers] = useState<AdminOffer[]>([]);
   const [items, setItems] = useState<Array<{ id: number; name: string }>>([]);
   const [signups, setSignups] = useState<OfferSignup[]>([]);
+  const [expandedSignupOffers, setExpandedSignupOffers] = useState<Set<number>>(() => new Set());
   const [editingOfferId, setEditingOfferId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -424,6 +425,8 @@ export function LimitedOfferManager() {
       <div className="grid gap-3">
         {offers.map((offer) => {
           const offerSignups = signups.filter((signup) => signup.offer_id === offer.id);
+          const signupsExpanded = expandedSignupOffers.has(offer.id);
+          const visibleSignups = signupsExpanded ? offerSignups : offerSignups.slice(0, 3);
           const remaining = offer.max_recipients === null ? null : Math.max(0, offer.max_recipients - offerSignups.length);
           return (
             <article key={offer.id} className="overflow-hidden rounded-lg border border-[#dfe4dc] bg-white">
@@ -432,13 +435,31 @@ export function LimitedOfferManager() {
                 <div className="p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-[#173f3a]">{offer.title}</h3><p className="mt-1 text-xs font-bold text-[#39704f]">الصنف: {offer.item_name || "غير محدد"} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `لكل مستفيد ${offer.quantity_per_user}`}</p><p className="mt-1 text-xs text-[#72807a]">الكود: {offer.code_prefix}1 · {offerSignups.length} تسجيل · {remaining === null ? "دون حد" : `بقي ${remaining}`}</p><p className="mt-1 text-xs text-[#72807a]">المراكز: {offer.allowed_districts.join("، ")}</p><p className={`mt-2 text-xs font-bold ${offer.public_visibility ? "text-[#39704f]" : "text-[#a9584d]"}`}>{offer.public_visibility ? "ظاهر للزوار الآن" : `غير ظاهر: ${offer.visibility_reason}`}</p></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => { if (!printLimitedOffer(offer, offerSignups)) setMessage("اسمح بالنوافذ المنبثقة لفتح معاينة الطباعة."); }} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">طباعة العرض</button><select aria-label={`حالة العرض ${offer.title}`} value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value)} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm"><option value="draft">مسودة</option><option value="active">نشط</option><option value="paused">متوقف</option><option value="ended">منتهي</option></select><button type="button" onClick={() => editOffer(offer)} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">تعديل</button><button type="button" onClick={() => void deleteOffer(offer)} className="h-10 rounded-md border border-[#dfbbb5] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div></div>
                   <div className="mt-4 grid gap-2">
-                    {offerSignups.map((signup) => (
-                      <div key={signup.id} className="grid gap-2 rounded-md border border-[#e6e9e4] bg-[#fafbf9] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
-                        <div className="min-w-0 text-sm"><strong className="ml-2 font-mono text-[#173f3a]">{signup.code}</strong><strong>{signup.name}</strong><p className="mt-1 text-xs text-[#72807a]">{signup.phone} · {signup.district}{signup.village ? ` · ${signup.village}` : ""} · {new Date(signup.created_at).toLocaleString("ar-EG")}</p>{signup.attachment_url && <a href={signup.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#39704f] underline">عرض المرفق: {signup.attachment_name}</a>}</div>
-                        <select value={signup.status} onChange={(event) => void updateSignupStatus(signup.id, event.target.value)} className="h-9 rounded-md border border-[#d9ded7] bg-white px-2 text-xs">{Object.entries(signupStatusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select>
-                      </div>
-                    ))}
-                    {!offerSignups.length && <p className="text-xs text-[#89918c]">لا يوجد مسجلون حتى الآن.</p>}
+                    <div id={`limited-offer-signups-${offer.id}`} className="grid gap-2">
+                      {visibleSignups.map((signup) => (
+                        <div key={signup.id} className="grid gap-2 rounded-md border border-[#e6e9e4] bg-[#fafbf9] p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                          <div className="min-w-0 text-sm"><strong className="ml-2 font-mono text-[#173f3a]">{signup.code}</strong><strong>{signup.name}</strong><p className="mt-1 text-xs text-[#72807a]">{signup.phone} · {signup.district}{signup.village ? ` · ${signup.village}` : ""} · {new Date(signup.created_at).toLocaleString("ar-EG")}</p>{signup.attachment_url && <a href={signup.attachment_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-bold text-[#39704f] underline">عرض المرفق: {signup.attachment_name}</a>}</div>
+                          <select value={signup.status} onChange={(event) => void updateSignupStatus(signup.id, event.target.value)} className="h-9 rounded-md border border-[#d9ded7] bg-white px-2 text-xs">{Object.entries(signupStatusLabels).map(([status, label]) => <option key={status} value={status}>{label}</option>)}</select>
+                        </div>
+                      ))}
+                      {!offerSignups.length && <p className="text-xs text-[#89918c]">لا يوجد مسجلون حتى الآن.</p>}
+                    </div>
+                    {offerSignups.length > 3 && (
+                      <button
+                        type="button"
+                        aria-expanded={signupsExpanded}
+                        aria-controls={`limited-offer-signups-${offer.id}`}
+                        onClick={() => setExpandedSignupOffers((current) => {
+                          const next = new Set(current);
+                          if (signupsExpanded) next.delete(offer.id);
+                          else next.add(offer.id);
+                          return next;
+                        })}
+                        className="h-9 justify-self-start rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]"
+                      >
+                        {signupsExpanded ? "إخفاء باقي المشاركين" : `عرض باقي المشاركين (${offerSignups.length - 3})`}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
