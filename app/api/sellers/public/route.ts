@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
   if (image instanceof File && image.size) {
     if (!image.type.startsWith("image/") || image.size > 5 * 1024 * 1024) return NextResponse.json({ error: "الصورة يجب أن تكون أقل من 5 ميجابايت" }, { status: 400 });
     const path = `offers/${Date.now()}-${Math.random().toString(36).slice(2)}-${image.name.replace(/[^a-zA-Z0-9._-]/g, "")}`;
-    const upload = await client.storage.from("seller-images").upload(path, image, { contentType: image.type, upsert: false });
+    const upload = await client.storage.from("seller-images").upload(path, image, { contentType: image.type, cacheControl: "31536000", upsert: false });
     if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 400 });
     imageUrl = client.storage.from("seller-images").getPublicUrl(path).data.publicUrl;
   }

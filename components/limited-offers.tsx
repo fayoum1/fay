@@ -57,6 +57,44 @@ type SignupCard = {
 
 const signupCardNotice = "هذه البطاقة شخصية ومخصصة لصاحبها فقط، ولا يجوز تحويلها أو استخدامها من شخص آخر. يحق للإدارة إلغاء الحجز عند ثبوت التلاعب أو إساءة الاستخدام.";
 
+function escapePrintHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] || character);
+}
+
+function printLimitedOffer(offer: AdminOffer, offerSignups: OfferSignup[]) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return false;
+  const quantity = offer.quantity_per_user === null
+    ? "لم تحدد"
+    : String(offer.quantity_per_user);
+  const rows = offerSignups.map((signup, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${escapePrintHtml(signup.code)}</td>
+      <td>${escapePrintHtml(signup.name)}</td>
+      <td dir="ltr">${escapePrintHtml(signup.phone)}</td>
+      <td>${escapePrintHtml([signup.district, signup.village].filter(Boolean).join("، "))}</td>
+      <td>${escapePrintHtml(signupStatusLabels[signup.status] || signup.status)}</td>
+      <td>${escapePrintHtml(new Date(signup.created_at).toLocaleString("ar-EG"))}</td>
+    </tr>`).join("");
+
+  printWindow.document.write(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${escapePrintHtml(offer.title)}</title><style>
+    @page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}body{margin:0;color:#202a27;font-family:Tahoma,Arial,sans-serif}.header{border-bottom:2px solid #173f3a;margin-bottom:16px;padding-bottom:12px}.header h1{margin:0;color:#173f3a;font-size:22px}.header p{margin:6px 0 0;color:#596963;font-size:12px;line-height:1.7}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 18px}.meta div{border:1px solid #d9ded8;padding:8px;font-size:11px}.meta strong{display:block;margin-bottom:4px;color:#596963}.count{margin:0 0 8px;color:#173f3a;font-size:14px;font-weight:bold}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10px}th,td{border:1px solid #d9ded8;padding:7px 5px;text-align:right;vertical-align:top;overflow-wrap:anywhere}th{background:#edf1eb;color:#173f3a}tr{break-inside:avoid}th:first-child,td:first-child{width:7%;text-align:center}th:nth-child(2),td:nth-child(2){width:13%}th:nth-child(4),td:nth-child(4){width:17%}th:nth-child(6),td:nth-child(6){width:12%}th:last-child,td:last-child{width:18%}.empty{text-align:center;color:#72807a;padding:20px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body><header class="header"><h1>${escapePrintHtml(offer.title)}</h1><p>${escapePrintHtml(offer.description || "")}</p></header><section class="meta"><div><strong>الصنف</strong>${escapePrintHtml(offer.item_name || "غير محدد")}</div><div><strong>الكمية لكل مستفيد</strong>${escapePrintHtml(quantity)}</div><div><strong>المراكز المتاحة</strong>${escapePrintHtml((offer.allowed_districts || []).join("، "))}</div></section><p class="count">قائمة المسجلين: ${offerSignups.length}</p>${offerSignups.length ? `<table><thead><tr><th>#</th><th>كود التسجيل</th><th>الاسم</th><th>الهاتف</th><th>العنوان</th><th>الحالة</th><th>تاريخ التسجيل</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="empty">لا يوجد مسجلون في هذا العرض.</p>'}</body></html>`);
+  printWindow.document.close();
+  window.setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 300);
+  return true;
+}
+
 function printSignupCard(card: SignupCard) {
   const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
@@ -392,7 +430,7 @@ export function LimitedOfferManager() {
               <div className="grid sm:grid-cols-[180px_1fr]">
                 <img src={offer.image_url} alt="" className="h-40 w-full bg-[#eef0ea] object-cover sm:h-full" />
                 <div className="p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-[#173f3a]">{offer.title}</h3><p className="mt-1 text-xs font-bold text-[#39704f]">الصنف: {offer.item_name || "غير محدد"} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `لكل مستفيد ${offer.quantity_per_user}`}</p><p className="mt-1 text-xs text-[#72807a]">الكود: {offer.code_prefix}1 · {offerSignups.length} تسجيل · {remaining === null ? "دون حد" : `بقي ${remaining}`}</p><p className="mt-1 text-xs text-[#72807a]">المراكز: {offer.allowed_districts.join("، ")}</p><p className={`mt-2 text-xs font-bold ${offer.public_visibility ? "text-[#39704f]" : "text-[#a9584d]"}`}>{offer.public_visibility ? "ظاهر للزوار الآن" : `غير ظاهر: ${offer.visibility_reason}`}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label={`حالة العرض ${offer.title}`} value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value)} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm"><option value="draft">مسودة</option><option value="active">نشط</option><option value="paused">متوقف</option><option value="ended">منتهي</option></select><button type="button" onClick={() => editOffer(offer)} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">تعديل</button><button type="button" onClick={() => void deleteOffer(offer)} className="h-10 rounded-md border border-[#dfbbb5] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div></div>
+                  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-display text-lg font-bold text-[#173f3a]">{offer.title}</h3><p className="mt-1 text-xs font-bold text-[#39704f]">الصنف: {offer.item_name || "غير محدد"} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `لكل مستفيد ${offer.quantity_per_user}`}</p><p className="mt-1 text-xs text-[#72807a]">الكود: {offer.code_prefix}1 · {offerSignups.length} تسجيل · {remaining === null ? "دون حد" : `بقي ${remaining}`}</p><p className="mt-1 text-xs text-[#72807a]">المراكز: {offer.allowed_districts.join("، ")}</p><p className={`mt-2 text-xs font-bold ${offer.public_visibility ? "text-[#39704f]" : "text-[#a9584d]"}`}>{offer.public_visibility ? "ظاهر للزوار الآن" : `غير ظاهر: ${offer.visibility_reason}`}</p></div><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => { if (!printLimitedOffer(offer, offerSignups)) setMessage("اسمح بالنوافذ المنبثقة لفتح معاينة الطباعة."); }} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">طباعة العرض</button><select aria-label={`حالة العرض ${offer.title}`} value={offer.status} onChange={(event) => void updateStatus(offer.id, event.target.value)} className="h-10 rounded-md border border-[#d9ded7] bg-white px-3 text-sm"><option value="draft">مسودة</option><option value="active">نشط</option><option value="paused">متوقف</option><option value="ended">منتهي</option></select><button type="button" onClick={() => editOffer(offer)} className="h-10 rounded-md border border-[#c9d1ca] px-3 text-xs font-bold text-[#173f3a]">تعديل</button><button type="button" onClick={() => void deleteOffer(offer)} className="h-10 rounded-md border border-[#dfbbb5] px-3 text-xs font-bold text-[#a9584d]">حذف</button></div></div>
                   <div className="mt-4 grid gap-2">
                     {offerSignups.map((signup) => (
                       <div key={signup.id} className="grid gap-2 rounded-md border border-[#e6e9e4] bg-[#fafbf9] p-3 sm:grid-cols-[1fr_auto] sm:items-center">

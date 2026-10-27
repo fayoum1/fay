@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
     const maxSize = isVideo ? 20 * 1024 * 1024 : 5 * 1024 * 1024;
     if (!validType || media.size > maxSize) return NextResponse.json({ error: isVideo ? "الفيديو يجب أن يكون أقل من 20 ميجابايت" : "الصورة يجب أن تكون أقل من 5 ميجابايت" }, { status: 400 });
     const path = `ads/${Date.now()}-${media.name.replace(/[^a-zA-Z0-9._-]/g, "")}`;
-    const upload = await client.storage.from("item-images").upload(path, media, { contentType: media.type, upsert: false });
+    const upload = await client.storage.from("item-images").upload(path, media, { contentType: media.type, cacheControl: "31536000", upsert: false });
     if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 400 });
     const publicUrl = client.storage.from("item-images").getPublicUrl(path).data.publicUrl;
     if (isVideo) videoUrl = publicUrl;

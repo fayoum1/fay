@@ -19,7 +19,7 @@ async function itemData(request: NextRequest, client: ReturnType<typeof database
   if (image instanceof File && client) {
     if (!image.type.startsWith("image/") || image.size > 5 * 1024 * 1024) throw new Error("Invalid image");
     const path = `${Date.now()}-${image.name.replace(/[^a-zA-Z0-9._-]/g, "")}`;
-    const upload = await client.storage.from("item-images").upload(path, image, { contentType: image.type, upsert: true });
+    const upload = await client.storage.from("item-images").upload(path, image, { contentType: image.type, cacheControl: "31536000", upsert: true });
     if (upload.error) throw new Error(upload.error.message);
     image_url = client.storage.from("item-images").getPublicUrl(path).data.publicUrl;
   }

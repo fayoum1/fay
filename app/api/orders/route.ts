@@ -113,7 +113,7 @@ export async function PATCH(request: Request) {
   const database = createClient(url, key, { auth: { persistSession: false } });
   const orderIds = [...new Set(changes.map((change: { order_id?: unknown }) => Number(change.order_id)).filter(Number.isInteger))];
   if (!orderIds.length) return NextResponse.json({ error: "لم يتم تحديد الحجز" }, { status: 400 });
-  const { data: orders, error } = await database.from("orders").select("id, phone, items, total, status").eq("phone", phone).in("id", orderIds);
+  const { data: orders, error } = await database.from("orders").select("id, phone, customer_name, items, total, status").eq("phone", phone).in("id", orderIds);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
   const updatedOrders = (orders || []).map((order) => {
@@ -130,7 +130,12 @@ export async function PATCH(request: Request) {
   });
 
   for (const order of updatedOrders) {
-    const { error: updateError } = await database.from("orders").update({ items: order.items, total: order.total }).eq("id", order.id).eq("phone", phone);
+    const { error: updateError } = await database.from("orders").update({
+      items: order.items,
+      total: order.total,
+      last_modified_by_role: "customer",
+      last_modified_by_name: order.customer_name || "العميل",
+    }).eq("id", order.id).eq("phone", phone);
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 400 });
   }
   return NextResponse.json({ success: true });

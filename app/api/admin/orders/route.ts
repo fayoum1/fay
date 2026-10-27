@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getSessionIdentity } from "@/lib/admin-auth";
+import { getSessionIdentity, type SessionIdentity } from "@/lib/admin-auth";
 import { orderMatchesRegions, parseOrderRegion } from "@/lib/order-region";
 
 type OrderItem = {
@@ -10,6 +10,13 @@ type OrderItem = {
   age_or_weight?: string | null;
   [key: string]: unknown;
 };
+const orderFields =
+  "id,customer_name,phone,governorate,district,items,total,status,status_changed_at,booking_source,booking_staff_name,status_changed_by,staff_name,admin_reverted,created_at";
+
+function isMissingSyncSchema(message: string) {
+  return /updated_at|order_change_log/i.test(message) &&
+    /does not exist|could not find|schema cache|relation/i.test(message);
+}
 
 function normalizeOrderItems(value: unknown): OrderItem[] {
   if (Array.isArray(value)) return value as OrderItem[];
@@ -29,38 +36,121 @@ export async function GET(request: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const database = createClient(url, key, { auth: { persistSession: false } });
-  let orders;
-  const orderRegionMode = identity.orderRegionMode || "include";
-  if (identity.role !== "staff" || (orderRegionMode === "include" && identity.orderRegions?.includes("*"))) {
-    const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    orders = data || [];
-  } else if (orderRegionMode === "exclude") {
-    const { data, error } = await database.from("orders").select("*").order("created_at", { ascending: false });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    orders = (data || []).filter((order) => orderMatchesRegions(identity.orderRegions, order.governorate, order.district, "exclude"));
-  } else {
-    const results = await Promise.all((identity.orderRegions || []).map((region) => {
+  const loadOrders = async (since: string | null, cursor: string) => {
+    const queryForRegion = (region?: string) => {
+      let query = database.from("orders").select(orderFields);
+      if (since) {
+        query = query
+          .gte("updated_at", new Date(new Date(since).getTime() - 5000).toISOString())
+          .lte("updated_at", cursor);
+      }
+      if (region === undefined) return query;
       const location = parseOrderRegion(region);
-      if (!location) return database.from("orders").select("*").eq("id", -1);
+      if (!location) return query.eq("id", -1);
       return location.district
-        ? database.from("orders").select("*").eq("governorate", location.governorate).eq("district", location.district)
-        : database.from("orders").select("*").eq("governorate", location.governorate).is("district", null);
-    }));
-    const failed = results.find((result) => result.error);
-    if (failed?.error) return NextResponse.json({ error: failed.error.message }, { status: 500 });
-    orders = [...new Map(results.flatMap((result) => result.data || []).map((order) => [order.id, order])).values()]
-      .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime());
-  }
-  return NextResponse.json(orders.map((order) => {
-    const orderItems = normalizeOrderItems(order.items);
-    return {
-      ...order,
-      id: `#${order.id}`,
-      order_items: orderItems,
-      items: orderItems.map((item) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${item.quantity}`).join("، "),
+        ? query.eq("governorate", location.governorate).eq("district", location.district)
+        : query.eq("governorate", location.governorate).is("district", null);
     };
-  }));
+
+    const orderRegionMode = identity.orderRegionMode || "include";
+    const isAllRegions =
+      identity.role !== "staff" ||
+      (orderRegionMode === "include" && identity.orderRegions?.includes("*"));
+    const isExcludedRegionsStaff =
+      identity.role === "staff" && orderRegionMode === "exclude";
+    const results = isAllRegions || isExcludedRegionsStaff
+      ? [await queryForRegion().order("created_at", { ascending: false })]
+      : await Promise.all((identity.orderRegions || []).map((region) => queryForRegion(region)));
+    const failed = results.find((result) => result.error);
+    if (failed?.error) return { orders: [] as typeof results[number]["data"], error: failed.error };
+
+    const rows = results.flatMap((result) => result.data || []);
+    const visibleRows = isExcludedRegionsStaff
+      ? rows.filter((order) =>
+          orderMatchesRegions(identity.orderRegions, order.governorate, order.district, "exclude"),
+        )
+      : rows;
+    return {
+      orders: [...new Map(visibleRows.map((order) => [order.id, order])).values()]
+        .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime()),
+      error: null,
+    };
+  };
+  const cursor = new Date().toISOString();
+  const requestedSince = request.nextUrl.searchParams.get("since");
+  const sinceTime = requestedSince ? new Date(requestedSince) : null;
+  const since = sinceTime && Number.isFinite(sinceTime.getTime()) ? sinceTime.toISOString() : null;
+  let fullSync = !since;
+  let syncSupported = true;
+  if (!since) {
+    const { error: syncSchemaError } = await database.from("orders").select("updated_at").limit(1);
+    if (syncSchemaError) {
+      if (isMissingSyncSchema(syncSchemaError.message)) syncSupported = false;
+      else return NextResponse.json({ error: syncSchemaError.message }, { status: 500 });
+    }
+  }
+  let loaded = await loadOrders(since, cursor);
+  if (loaded.error && isMissingSyncSchema(loaded.error.message)) {
+    loaded = await loadOrders(null, cursor);
+    fullSync = true;
+    syncSupported = false;
+  }
+  if (loaded.error) return NextResponse.json({ error: loaded.error.message }, { status: 500 });
+
+  let deletedIds: number[] = [];
+  if (since && !fullSync) {
+    const { data: deletedOrders, error: deletedError } = await database
+      .from("order_change_log")
+      .select("order_id,old_values")
+      .eq("change_type", "deleted")
+      .gte("changed_at", new Date(new Date(since).getTime() - 5000).toISOString())
+      .lte("changed_at", cursor)
+      .order("changed_at", { ascending: false })
+      .limit(500);
+    if (deletedError && isMissingSyncSchema(deletedError.message)) {
+      loaded = await loadOrders(null, cursor);
+      if (loaded.error) return NextResponse.json({ error: loaded.error.message }, { status: 500 });
+      fullSync = true;
+      syncSupported = false;
+    } else if (deletedError) {
+      return NextResponse.json({ error: deletedError.message }, { status: 500 });
+    } else if ((deletedOrders || []).length === 500) {
+      loaded = await loadOrders(null, cursor);
+      if (loaded.error) return NextResponse.json({ error: loaded.error.message }, { status: 500 });
+      fullSync = true;
+    } else {
+      deletedIds = (deletedOrders || [])
+        .filter((entry) => {
+          if (identity.role !== "staff") return true;
+          const previous = entry.old_values as { governorate?: string; district?: string | null } | null;
+          if (!previous?.governorate) return false;
+          return orderMatchesRegions(
+            identity.orderRegions,
+            previous.governorate,
+            previous.district || null,
+            identity.orderRegionMode || "include",
+          );
+        })
+        .map((entry) => Number(entry.order_id));
+    }
+  }
+
+  return NextResponse.json({
+    orders: loaded.orders.map((order) => {
+      const orderItems = normalizeOrderItems(order.items);
+      return {
+        ...order,
+        id: `#${order.id}`,
+        order_items: orderItems,
+        items: orderItems
+          .map((item) => `${item.name}${item.age_or_weight ? ` (${item.age_or_weight})` : ""} × ${item.quantity}`)
+          .join("، "),
+      };
+    }),
+    deleted_ids: deletedIds,
+    cursor: syncSupported ? cursor : null,
+    full_sync: fullSync,
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -102,6 +192,8 @@ export async function PATCH(request: NextRequest) {
       items: updatedItems,
       status_changed_at: new Date().toISOString(),
       status_changed_by: identity.staffName || "الأدمن",
+      last_modified_by_role: role,
+      last_modified_by_name: identity.staffName || "الأدمن",
     };
     if (allItemsHaveSameStatus && allowed.includes(itemStatuses[0])) {
       update.status = itemStatuses[0];
@@ -142,7 +234,12 @@ export async function PATCH(request: NextRequest) {
       return { id: item.id, name: item.name, category: item.category, age_or_weight: item.age_or_weight || null, quantity: quantities.get(Number(item.id)), price, final_price: finalPrice };
     });
     const total = updatedItems.reduce((sum, item) => sum + item.final_price * (item.quantity || 0), 0);
-    const { error } = await database.from("orders").update({ items: updatedItems, total }).eq("id", id);
+    const { error } = await database.from("orders").update({
+      items: updatedItems,
+      total,
+      last_modified_by_role: role,
+      last_modified_by_name: identity.staffName || "الأدمن",
+    }).eq("id", id);
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     return NextResponse.json({ success: true, items: updatedItems, total });
   }
@@ -151,6 +248,8 @@ export async function PATCH(request: NextRequest) {
     status,
     status_changed_at: new Date().toISOString(),
     status_changed_by: identity.staffName || "الأدمن",
+    last_modified_by_role: role,
+    last_modified_by_name: identity.staffName || "الأدمن",
   };
   if (role === "staff" && status === "تم" && identity.staffName) {
     update.staff_name = identity.staffName;
@@ -181,6 +280,11 @@ export async function DELETE(request: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return NextResponse.json({ error: "Supabase is not configured" }, { status: 503 });
   const database = createClient(url, key, { auth: { persistSession: false } });
+  const { error: actorError } = await database.from("orders").update({
+    last_modified_by_role: identity.role,
+    last_modified_by_name: identity.staffName || "الأدمن",
+  }).eq("id", id);
+  if (actorError) return NextResponse.json({ error: actorError.message }, { status: 400 });
   const { error } = await database.from("orders").delete().eq("id", id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ success: true });

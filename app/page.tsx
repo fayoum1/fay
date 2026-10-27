@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa6";
@@ -75,6 +75,17 @@ type Order = {
 };
 type OrderStatus = "حجز مؤكد" | "قادم" | "قيد التنفيذ" | "تم" | "لم يرد" | "غير متاح" | "طلب مرفوض";
 type UserRole = "admin" | "staff";
+type OrderAuditEntry = {
+  id: number;
+  order_id: number;
+  change_type: "created" | "updated" | "deleted";
+  actor_role: "admin" | "staff" | "customer" | "system";
+  actor_name: string | null;
+  actor_contact: string | null;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+  changed_at: string;
+};
 type Employee = { id: number; name: string; order_regions: string[]; order_region_mode: "include" | "exclude"; last_seen_at: string | null; active: boolean; created_at: string };
 type SellerOffer = {
   id: number;
@@ -184,6 +195,7 @@ type SiteSettings = {
   milestone_count: number;
   milestone_reward: number;
   show_target_to_staff: boolean;
+  hourly_reports_enabled: boolean;
   ad_display_duration_seconds?: number;
   ad_rotation_mode?: AdvertisementRotationMode;
   ad_auto_play?: boolean;
@@ -212,6 +224,7 @@ const defaultSettings: SiteSettings = {
   milestone_count: 1,
   milestone_reward: 1,
   show_target_to_staff: true,
+  hourly_reports_enabled: true,
   ad_display_duration_seconds: 10,
   ad_rotation_mode: "scroll",
   ad_auto_play: true,
@@ -403,20 +416,51 @@ function OrderAttribution({ order }: { order: Order }) {
 function OrderLocation({ order }: { order: Order }) {
   const normalizedDistrict = order.district?.replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").trim();
   const highlightAbshway = order.governorate === "الفيوم" && normalizedDistrict === "ابشواي";
+  const highlightYusufAlSiddiq = order.governorate === "الفيوم" && normalizedDistrict === "يوسف الصديق";
 
   return (
     <small className="block text-xs font-semibold text-[#89918c]">
       {order.governorate}{order.district ? ` - ` : ""}
-      {order.district && highlightAbshway && (
+      {order.district && (highlightAbshway || highlightYusufAlSiddiq) && (
         <Star
-          aria-label="حجز من أبشواي"
-          className="mx-1 inline-block size-6 fill-blue-600 text-blue-600 align-middle"
+          aria-label={`حجز من ${highlightAbshway ? "أبشواي" : "يوسف الصديق"}`}
+          className={`mx-1 inline-block size-6 align-middle ${
+            highlightAbshway
+              ? "fill-blue-600 text-blue-600"
+              : "fill-amber-500 text-amber-500"
+          }`}
           strokeWidth={2.5}
         />
       )}
       {order.district || ""}
     </small>
   );
+}
+
+function summarizeOrderAuditSnapshot(snapshot: Record<string, unknown> | null) {
+  if (!snapshot) return "—";
+  const parts: string[] = [];
+  if (typeof snapshot.status === "string") parts.push(`الحالة: ${snapshot.status}`);
+  if (snapshot.total !== undefined) parts.push(`الإجمالي: ${Number(snapshot.total) || 0} جنيه`);
+  const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+  if (items.length) {
+    parts.push(
+      `الأصناف: ${items
+        .map((value) => {
+          if (!value || typeof value !== "object") return "";
+          const item = value as { name?: unknown; quantity?: unknown; item_status?: unknown };
+          const status = typeof item.item_status === "string" ? ` (${item.item_status})` : "";
+          return `${String(item.name || "صنف")} × ${Number(item.quantity) || 0}${status}`;
+        })
+        .filter(Boolean)
+        .join("، ")}`,
+    );
+  }
+  const location = [snapshot.governorate, snapshot.district]
+    .filter((value): value is string => typeof value === "string" && Boolean(value))
+    .join(" - ");
+  if (location) parts.push(`الموقع: ${location}`);
+  return parts.join(" | ") || "لا توجد تفاصيل مسجلة";
 }
 
 function getOrderRegion(order: Order) {
@@ -454,13 +498,28 @@ export default function Home() {
   const [orderSearch, setOrderSearch] = useState("");
   const [category, setCategory] = useState("الكل");
   const [cart, setCart] = useState<Record<number, number>>({});
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrdersState] = useState<Order[]>([]);
+  const ordersRef = useRef<Order[]>([]);
+  const setOrders = useCallback((update: Order[] | ((current: Order[]) => Order[])) => {
+    setOrdersState((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      ordersRef.current = next;
+      return next;
+    });
+  }, []);
   const [notice, setNotice] = useState("");
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [duplicateBooking, setDuplicateBooking] = useState<{
     items: { id: string; name: string; status: OrderStatus; quantity: number; order_id: number }[];
   } | null>(null);
   const [duplicateQuantities, setDuplicateQuantities] = useState<Record<string, number>>({});
+  const [orderHistory, setOrderHistory] = useState<{
+    orderId: string;
+    entries: OrderAuditEntry[];
+  } | null>(null);
+  const [orderHistoryLoading, setOrderHistoryLoading] = useState(false);
+  const [orderHistoryError, setOrderHistoryError] = useState("");
+  const orderHistoryRequestId = useRef(0);
   const [adminPin, setAdminPin] = useState("");
   const [loginRole, setLoginRole] = useState<UserRole>("admin");
   const [staffNameInput, setStaffNameInput] = useState("");
@@ -469,6 +528,7 @@ export default function Home() {
   const [adminError, setAdminError] = useState("");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const orderSyncCursor = useRef<string | null>(null);
   const [menuItems, setMenuItems] = useState<Item[]>([]);
   const [adminTab, setAdminTab] = useState<"orders" | "edit-order" | "menu" | "settings" | "employees" | "marketing" | "targets" | "sellers" | "users" | "advertisements" | "limited-offers">(
     "orders",
@@ -477,32 +537,42 @@ export default function Home() {
   const [printEmployeeName, setPrintEmployeeName] = useState<string | null>(null);
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
   const [adDisplaySettings, setAdDisplaySettings] = useState<AdvertisementDisplaySettings>(defaultAdvertisementDisplaySettings);
+  const [adDisplaySettingsReady, setAdDisplaySettingsReady] = useState(false);
   const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [categoryOptions, setCategoryOptions] = useState(defaultCategories);
 
   useEffect(() => {
+    let active = true;
     try {
       const saved = window.localStorage.getItem("ad-display-settings");
-      if (!saved) return;
-      const parsed = JSON.parse(saved) as Partial<AdvertisementDisplaySettings>;
-      setAdDisplaySettings({
-        ...defaultAdvertisementDisplaySettings,
-        ...parsed,
-      });
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<AdvertisementDisplaySettings>;
+        window.setTimeout(() => {
+          if (active) {
+            setAdDisplaySettings({
+              ...defaultAdvertisementDisplaySettings,
+              ...parsed,
+            });
+          }
+        }, 0);
+      }
     } catch {
-      // ignore invalid saved settings
+      window.setTimeout(() => {
+        if (active) setAdDisplaySettingsReady(true);
+      }, 0);
     }
+    window.setTimeout(() => {
+      if (active) setAdDisplaySettingsReady(true);
+    }, 0);
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
+    if (!adDisplaySettingsReady) return;
     window.localStorage.setItem("ad-display-settings", JSON.stringify(adDisplaySettings));
-  }, [adDisplaySettings]);
-
-  useEffect(() => {
-    if (settings.ad_display_duration_seconds !== undefined || settings.ad_rotation_mode !== undefined || settings.ad_auto_play !== undefined || settings.ad_show_advertiser_name !== undefined || settings.ad_show_expiry !== undefined || settings.ad_show_reward_badge !== undefined) {
-      setAdDisplaySettings(hydrateAdvertisementDisplaySettings(settings));
-    }
-  }, [settings]);
+  }, [adDisplaySettings, adDisplaySettingsReady]);
   const [todayOrdersCount, setTodayOrdersCount] = useState(0);
   const [confirmedOrdersCount, setConfirmedOrdersCount] = useState(0);
   const [ordersDialog, setOrdersDialog] = useState<"today" | "confirmed" | null>(null);
@@ -534,6 +604,48 @@ export default function Home() {
   const [limitedOffers, setLimitedOffers] = useState<LimitedOffer[]>([]);
   const [featuredLimitedOffer, setFeaturedLimitedOffer] = useState<LimitedOffer | null>(null);
   const [selectedLimitedOffer, setSelectedLimitedOffer] = useState<LimitedOffer | null>(null);
+
+  const setOrderCounts = useCallback((ordersToCount: Order[]) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setTodayOrdersCount(ordersToCount.filter((order) => new Date(order.created_at) >= today).length);
+    setConfirmedOrdersCount(getConfirmedOrders(ordersToCount).length);
+  }, []);
+
+  const applyOrderSync = useCallback((payload: unknown, incremental: boolean) => {
+    if (Array.isArray(payload)) {
+      orderSyncCursor.current = null;
+      const nextOrders = payload as Order[];
+      setOrders(nextOrders);
+      setOrderCounts(nextOrders);
+      return;
+    }
+    if (!payload || typeof payload !== "object") return;
+    const result = payload as {
+      orders?: unknown;
+      deleted_ids?: unknown;
+      cursor?: unknown;
+      full_sync?: unknown;
+    };
+    if (!Array.isArray(result.orders)) return;
+    const incoming = result.orders as Order[];
+    const deletedIds = Array.isArray(result.deleted_ids)
+      ? result.deleted_ids.filter((id): id is number => Number.isInteger(id)).map((id) => `#${id}`)
+      : [];
+    const canIncrement = incremental && result.full_sync !== true && typeof result.cursor === "string";
+    orderSyncCursor.current = typeof result.cursor === "string" ? result.cursor : null;
+    let nextOrders = incoming;
+    if (canIncrement) {
+      const byId = new Map(ordersRef.current.map((order) => [order.id, order]));
+      for (const id of deletedIds) byId.delete(id);
+      for (const order of incoming) byId.set(order.id, order);
+      nextOrders = [...byId.values()].sort(
+        (first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime(),
+      );
+    }
+    setOrders(nextOrders);
+    setOrderCounts(nextOrders);
+  }, [setOrderCounts, setOrders]);
 
   useEffect(() => {
     const restoreStaffName = window.setTimeout(() => {
@@ -804,8 +916,7 @@ export default function Home() {
           }
           const ordersResponse = await fetch("/api/admin/orders");
           if (ordersResponse.ok) {
-            const ordersData = await ordersResponse.json();
-            if (Array.isArray(ordersData)) setOrders(ordersData);
+            applyOrderSync(await ordersResponse.json(), false);
           }
           if (data.role === "admin") {
             const employeesResponse = await fetch("/api/admin/employees");
@@ -868,35 +979,47 @@ export default function Home() {
           setCategoryOptions(data.map((category) => category.name));
       })
       .catch(() => undefined);
-  }, []);
+  }, [applyOrderSync]);
 
   useEffect(() => {
     if (!adminAuthenticated) return;
-    const refreshOrders = () => {
+    let refreshing = false;
+    let lastStaffHeartbeat = Date.now();
+    const refreshOrders = async () => {
+      if (document.visibilityState !== "visible" || refreshing) return;
+      refreshing = true;
       if (userRole === "staff") {
-        fetch("/api/admin/session")
-          .then((response) => response.json())
-          .then((data) => {
-            if (data?.lastSeenAt) setStaffLastSeenAt(data.lastSeenAt);
-          })
-          .catch(() => undefined);
+        if (Date.now() - lastStaffHeartbeat >= 5 * 60 * 1000) {
+          lastStaffHeartbeat = Date.now();
+          void fetch("/api/admin/session")
+            .then((response) => response.json())
+            .then((data) => {
+              if (data?.lastSeenAt) setStaffLastSeenAt(data.lastSeenAt);
+            })
+            .catch(() => undefined);
+        }
       }
-      fetch("/api/admin/orders")
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setOrders(data);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            setTodayOrdersCount(data.filter((order: Order) => new Date(order.created_at) >= today).length);
-            setConfirmedOrdersCount(getConfirmedOrders(data).length);
-          }
-        })
-        .catch(() => undefined);
+      try {
+        const cursor = orderSyncCursor.current;
+        const query = cursor ? `?since=${encodeURIComponent(cursor)}` : "";
+        const response = await fetch(`/api/admin/orders${query}`, { cache: "no-store" });
+        if (response.ok) applyOrderSync(await response.json(), Boolean(cursor));
+      } catch {
+        // Keep the last successfully loaded orders while offline.
+      } finally {
+        refreshing = false;
+      }
     };
-    const interval = window.setInterval(refreshOrders, 30000);
-    return () => window.clearInterval(interval);
-  }, [adminAuthenticated, userRole]);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshOrders();
+    };
+    const interval = window.setInterval(refreshOrders, 2 * 60 * 1000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [adminAuthenticated, applyOrderSync, userRole]);
 
   const installApp = async () => {
     if (!installPrompt) {
@@ -946,6 +1069,35 @@ export default function Home() {
   const handleRadioError = () => { setRadioPlaying(false); setRadioError(true); };
 
   const installOnIOS = () => setShowIOSInstall(true);
+
+  const openOrderHistory = async (order: Order) => {
+    const requestId = ++orderHistoryRequestId.current;
+    setOrderHistory({ orderId: order.id, entries: [] });
+    setOrderHistoryError("");
+    setOrderHistoryLoading(true);
+    try {
+      const orderId = Number(order.id.replace("#", ""));
+      const response = await fetch(`/api/admin/orders/${orderId}/history`, {
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "تعذر تحميل سجل الطلب");
+      if (requestId !== orderHistoryRequestId.current) return;
+      setOrderHistory({ orderId: order.id, entries: result.history || [] });
+    } catch (reason) {
+      if (requestId !== orderHistoryRequestId.current) return;
+      setOrderHistoryError(reason instanceof Error ? reason.message : "تعذر تحميل سجل الطلب");
+    } finally {
+      if (requestId === orderHistoryRequestId.current) setOrderHistoryLoading(false);
+    }
+  };
+
+  const closeOrderHistory = () => {
+    orderHistoryRequestId.current += 1;
+    setOrderHistory(null);
+    setOrderHistoryLoading(false);
+    setOrderHistoryError("");
+  };
 
   const updateQuantity = (id: number, delta: number) =>
     setCart((current) => ({
@@ -1227,14 +1379,7 @@ export default function Home() {
     if ((result.role || loginRole) === "staff") setStaffLastSeenAt(result.lastSeenAt || null);
     const ordersResponse = await fetch("/api/admin/orders");
     if (ordersResponse.ok) {
-      const visibleOrders = await ordersResponse.json();
-      if (Array.isArray(visibleOrders)) {
-        setOrders(visibleOrders);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        setTodayOrdersCount(visibleOrders.filter((order: Order) => new Date(order.created_at) >= today).length);
-        setConfirmedOrdersCount(getConfirmedOrders(visibleOrders).length);
-      }
+      applyOrderSync(await ordersResponse.json(), false);
     }
     if ((result.role || loginRole) === "staff") {
       const name = result.staffName || "";
@@ -1246,6 +1391,7 @@ export default function Home() {
   const logoutAdmin = async () => {
     await fetch("/api/admin/session", { method: "DELETE" });
     setAdminAuthenticated(false);
+    orderSyncCursor.current = null;
     setUserRole(null);
     setStaffLastSeenAt(null);
     setAdminTab("orders");
@@ -1434,6 +1580,7 @@ export default function Home() {
           orders={ordersDialog === "today" ? todayOrders : confirmedOrders}
           onClose={() => setOrdersDialog(null)}
           onStatusChange={handleStatusSelect}
+          onViewHistory={openOrderHistory}
         />
       )}
       {showIOSInstall && <div className="fixed inset-x-4 top-4 z-50 rounded-2xl border border-[#e2e1d8] bg-[#fffdf9] p-4 text-right shadow-2xl"><button onClick={() => setShowIOSInstall(false)} className="float-left text-xl text-[#72807a]" aria-label="إغلاق">×</button><p className="font-bold text-[#173f3a]">تثبيت التطبيق على iPhone</p><p className="mt-2 text-sm leading-6 text-[#596963]">اضغط زر المشاركة في المتصفح، ثم اختر <strong>إضافة إلى الشاشة الرئيسية</strong>، وبعدها افتح التطبيق من الأيقونة.</p></div>}
@@ -1668,6 +1815,86 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {orderHistory && (
+        <div
+          className="fixed inset-0 z-[60] grid place-items-center bg-[#173f3a99] px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="order-history-title"
+          onClick={closeOrderHistory}
+        >
+          <section
+            className="max-h-[85dvh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[#dedfd8] bg-[#fffdf9] shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-center justify-between border-b border-[#e7e7df] px-5 py-4">
+              <div>
+                <h2 id="order-history-title" className="font-display text-xl font-bold text-[#173f3a]">
+                  سجل تغييرات الطلب {orderHistory.orderId}
+                </h2>
+                <p className="mt-1 text-xs text-[#72807a]">إنشاء الطلب وتغييرات الحالة والكميات والحذف</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeOrderHistory}
+                className="grid size-9 place-items-center rounded-lg bg-[#eef0ea] text-[#596963]"
+                aria-label="إغلاق سجل الطلب"
+              >
+                <XCircle size={18} />
+              </button>
+            </header>
+            <div className="max-h-[calc(85dvh-82px)] overflow-y-auto p-4 sm:p-5">
+              {orderHistoryLoading ? (
+                <p className="py-10 text-center text-sm font-semibold text-[#72807a]">جارٍ تحميل السجل...</p>
+              ) : orderHistoryError ? (
+                <p className="py-10 text-center text-sm font-bold text-[#a9584d]">{orderHistoryError}</p>
+              ) : orderHistory.entries.length ? (
+                <ol className="grid gap-3">
+                  {orderHistory.entries.map((entry) => (
+                    <li key={entry.id} className="rounded-xl border border-[#e7e7df] bg-white p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="font-bold text-[#173f3a]">
+                            {entry.change_type === "created"
+                              ? "إنشاء الطلب"
+                              : entry.change_type === "deleted"
+                                ? "حذف الطلب"
+                                : "تعديل الطلب"}
+                          </p>
+                          <p className="mt-1 text-xs text-[#72807a]">
+                            بواسطة {entry.actor_name || ({
+                              admin: "الأدمن",
+                              staff: "موظف",
+                              customer: "العميل",
+                              system: "النظام",
+                            }[entry.actor_role] || "النظام")}
+                            {entry.actor_contact ? ` · ${entry.actor_contact}` : ""}
+                          </p>
+                        </div>
+                        <time className="text-xs text-[#89918c]">
+                          {new Date(entry.changed_at).toLocaleString("ar-EG")}
+                        </time>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-xs leading-6 sm:grid-cols-2">
+                        <p className="rounded-lg bg-[#f7f7f2] p-3 text-[#596963]">
+                          <strong className="block text-[#89918c]">قبل</strong>
+                          {summarizeOrderAuditSnapshot(entry.old_values)}
+                        </p>
+                        <p className="rounded-lg bg-[#f1faf4] p-3 text-[#39704f]">
+                          <strong className="block text-[#56816c]">بعد</strong>
+                          {summarizeOrderAuditSnapshot(entry.new_values)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="py-10 text-center text-sm font-semibold text-[#72807a]">لا توجد تغييرات مسجلة لهذا الطلب.</p>
+              )}
+            </div>
+          </section>
         </div>
       )}
       {userRole === "staff" && milestoneMessage && (
@@ -2448,6 +2675,15 @@ export default function Home() {
                     </small>
                     <small className="mr-2 block text-xs font-bold text-[#c48738]">{formatRelativeTime(order.status_changed_at || order.created_at, currentTime)}</small>
                     <OrderAttribution order={order} />
+                    <button
+                      type="button"
+                      onClick={() => void openOrderHistory(order)}
+                      className="mr-2 mt-1 inline-flex items-center gap-1 rounded-md bg-[#eef0ea] px-2 py-1 text-xs font-bold text-[#39704f] hover:bg-[#e2e8df]"
+                      aria-label={`عرض سجل الطلب ${order.id}`}
+                    >
+                      <Clock3 size={13} />
+                      سجل التغييرات
+                    </button>
                   </span>
                   <span className="font-display text-lg font-extrabold tabular-nums text-[#c48738]">
                     {order.total} جنيه
@@ -2598,6 +2834,15 @@ export default function Home() {
                       </small>
                       <small className="mr-2 block text-xs font-bold text-[#c48738]">{formatRelativeTime(order.status_changed_at || order.created_at, currentTime)}</small>
                       <OrderAttribution order={order} />
+                      <button
+                        type="button"
+                        onClick={() => void openOrderHistory(order)}
+                        className="mr-2 mt-1 inline-flex items-center gap-1 rounded-md bg-[#eef0ea] px-2 py-1 text-xs font-bold text-[#39704f] hover:bg-[#e2e8df]"
+                        aria-label={`عرض سجل الطلب ${order.id}`}
+                      >
+                        <Clock3 size={13} />
+                        سجل التغييرات
+                      </button>
                     </span>
                     <span className="font-display text-lg font-extrabold tabular-nums text-[#c48738]">
                       {order.total} جنيه
@@ -2878,11 +3123,13 @@ function OrdersDialog({
   orders,
   onClose,
   onStatusChange,
+  onViewHistory,
 }: {
   title: string;
   orders: Order[];
   onClose: () => void;
   onStatusChange: (id: string, status: OrderStatus, currentStatus: OrderStatus) => void;
+  onViewHistory: (order: Order) => Promise<void>;
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-[#173f3a99] p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="orders-dialog-title" onClick={onClose}>
@@ -2915,6 +3162,15 @@ function OrdersDialog({
                   <OrderItemsGrid order={order} onStatusChange={onStatusChange} />
                   <small className="block text-[#89918c]">{formatOrderDate(order.created_at)}</small>
                   <OrderAttribution order={order} />
+                  <button
+                    type="button"
+                    onClick={() => void onViewHistory(order)}
+                    className="mt-1 inline-flex items-center gap-1 rounded-md bg-[#eef0ea] px-2 py-1 text-xs font-bold text-[#39704f] hover:bg-[#e2e8df]"
+                    aria-label={`عرض سجل الطلب ${order.id}`}
+                  >
+                    <Clock3 size={13} />
+                    سجل التغييرات
+                  </button>
                 </div>
                 <strong className="hidden min-w-0 font-display text-lg text-[#c48738] sm:block">{order.total} جنيه</strong>
                 <div className="hidden min-w-0 sm:block"><OrderStatusIcons order={order} /></div>
@@ -3411,6 +3667,7 @@ function EmployeesManager({
 
   useEffect(() => {
     const refreshEmployees = () => {
+      if (document.visibilityState !== "visible") return;
       fetch("/api/admin/employees")
         .then((response) => response.ok ? response.json() : null)
         .then((data) => {
@@ -3419,8 +3676,12 @@ function EmployeesManager({
         .catch(() => undefined);
     };
     refreshEmployees();
-    const interval = window.setInterval(refreshEmployees, 30000);
-    return () => window.clearInterval(interval);
+    const interval = window.setInterval(refreshEmployees, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", refreshEmployees);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshEmployees);
+    };
   }, [setEmployees]);
 
   const saveEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -3704,27 +3965,36 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
 
     const advertisement = item.value;
     return (
-      <Link href={`/ads/${advertisement.id}`} className="block">
-        <div className="grid h-[158px] w-full grid-cols-[190px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right">
-          {advertisement.media_type === "video" && advertisement.video_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><video src={advertisement.video_url} muted autoPlay loop playsInline className="max-h-full max-w-full object-contain" /></div> : advertisement.image_url ? <div className="grid h-[138px] w-[190px] place-items-center overflow-hidden rounded-md bg-[#eef0ea]"><img src={advertisement.image_url} alt="" className="max-h-full max-w-full object-contain" /></div> : <div className="grid h-[138px] w-[190px] place-items-center rounded-md border border-dashed border-[#d8dfd6] bg-[#f7faf6] text-[10px] font-bold text-[#89918c]">نصي</div>}
-          <div className="min-w-0 space-y-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <p className="shrink-0 text-[10px] font-bold text-[#a66c20]">إعلان ممول</p>
-              {config.show_advertiser_name && <p className="min-w-0 truncate text-[9px] font-bold text-[#72807a]">{advertisement.advertiser_name}</p>}
-            </div>
-            <p className="line-clamp-1 text-sm font-bold leading-5 text-[#173f3a]">{advertisement.title}</p>
-            {config.show_reward_badge && advertisement.reward_badge && <span className="inline-flex min-h-7 items-center rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white shadow-sm">{advertisement.reward_badge}</span>}
-            <p className="line-clamp-1 text-xs leading-5 text-[#596963]">{advertisement.description}</p>
+      <article className="overflow-hidden rounded-xl border border-[#dfe5dc] bg-white shadow-sm">
+        <div className="grid h-[48dvh] min-h-[240px] max-h-[560px] w-full place-items-center overflow-hidden bg-[#18201e] sm:h-[52dvh] sm:min-h-[320px]">
+          {advertisement.media_type === "video" && advertisement.video_url ? (
+            <video src={advertisement.video_url} muted autoPlay loop playsInline preload="metadata" className="size-full object-contain" />
+          ) : advertisement.image_url ? (
+            <img src={advertisement.image_url} alt={advertisement.title} className="size-full object-contain" />
+          ) : (
+            <div className="text-sm font-bold text-white">إعلان ممول</div>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 p-2.5">
+          <div className="min-w-0">
+            {config.show_reward_badge && advertisement.reward_badge && (
+              <span className="inline-flex max-w-full truncate rounded-md bg-[#edf6ef] px-2.5 py-1.5 text-xs font-black text-[#39704f]">
+                {advertisement.reward_badge}
+              </span>
+            )}
             {config.show_expiry && <AdvertisementExpiryMeta advertisement={advertisement} compact />}
           </div>
+          {config.show_advertiser_name && (
+            <span className="text-[10px] font-semibold text-[#72807a]">إعلان · {advertisement.advertiser_name}</span>
+          )}
         </div>
-      </Link>
+      </article>
     );
   };
 
   const renderAction = (item: MarketingFeedItem) => item.kind === "offer"
     ? <button type="button" onClick={() => onOfferSelect(item.value)} disabled={item.value.remaining === 0} className="mt-2 h-10 w-full rounded-md bg-[#173f3a] text-sm font-bold text-white disabled:opacity-50 sm:hidden">احجز العرض</button>
-    : <Link href={`/ads/${item.value.id}`} className="mt-2 flex h-10 items-center justify-center rounded-md bg-[#173f3a] text-sm font-bold text-white sm:hidden">عرض الإعلان</Link>;
+    : <Link href={`/ads/${item.value.id}`} className="mt-2 flex h-11 items-center justify-center rounded-md bg-[#173f3a] text-sm font-bold text-white">التفاصيل والهدية أو الخصم</Link>;
 
   const renderFeedItem = (item: MarketingFeedItem) => (
     <div key={`${item.kind}-${item.value.id}`} dir="rtl" className="w-full shrink-0 px-0.5">
@@ -3737,11 +4007,13 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
 
   return (
     <section className="my-2 overflow-hidden" aria-label="الإعلانات والعروض المحدودة">
-      <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">{offers.length && advertisements.length ? "إعلانات وعروض محدودة" : offers.length ? "عروض محدودة" : "إعلانات ممولة"}</h2>
+      {(offers.length > 0 || !advertisements.length) && (
+        <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">{offers.length && advertisements.length ? "إعلانات وعروض محدودة" : offers.length ? "عروض محدودة" : "إعلانات ممولة"}</h2>
+      )}
       {feed.length > 1 && (isManualMode || !config.auto_play) && (
         <div className="mb-2 flex items-center justify-end gap-2 px-1">
-          <button type="button" onClick={goToPrevious} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">السابق</button>
-          <button type="button" onClick={goToNext} className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">التالي</button>
+          <button type="button" onClick={goToPrevious} aria-label="الإعلان السابق" className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">السابق</button>
+          <button type="button" onClick={goToNext} aria-label="الإعلان التالي" className="h-8 rounded-md border border-[#d9ded7] bg-white px-3 text-[11px] font-bold text-[#173f3a]">التالي</button>
         </div>
       )}
 
@@ -3766,22 +4038,15 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
 function FeaturedAdvertisement({ advertisement }: { advertisement: PublicAdvertisement }) {
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center bg-[#173f3acc] sm:p-5" role="dialog" aria-modal="true" aria-label="إعلان مميز">
-      <div className="relative max-h-[100dvh] w-full overflow-y-auto bg-[#fffdf9] text-right shadow-2xl sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-xl sm:rounded-lg">
-        <div className="px-4 pb-3 pt-4 sm:px-5">
-          <p className="text-xs font-bold text-[#c48738]">إعلان ممول</p>
-          <div className="mt-1 flex items-center justify-between gap-3">
-            <h2 className="min-w-0 font-display text-xl font-bold text-[#173f3a] sm:text-2xl">{advertisement.title}</h2>
-            {advertisement.reward_badge && <span className="shrink-0 text-xs font-black text-[#39704f] sm:text-sm">{advertisement.reward_badge}</span>}
-          </div>
-        </div>
+      <div className="relative max-h-[100dvh] w-full overflow-y-auto bg-[#fffdf9] text-right shadow-2xl sm:max-h-[calc(100dvh-2.5rem)] sm:max-w-3xl sm:rounded-lg">
         {advertisement.media_type === "video" && advertisement.video_url ? (
-          <video src={advertisement.video_url} controls autoPlay loop muted playsInline preload="auto" className="max-h-[62dvh] w-full bg-black object-contain" />
+          <video src={advertisement.video_url} controls autoPlay loop muted playsInline preload="metadata" className="h-[68dvh] max-h-[760px] min-h-[300px] w-full bg-black object-contain" />
         ) : advertisement.image_url && (
-          <img src={advertisement.image_url} alt={advertisement.title} className="max-h-[62dvh] w-full bg-[#18201e] object-contain" />
+          <img src={advertisement.image_url} alt={advertisement.title} className="h-[68dvh] max-h-[760px] min-h-[300px] w-full bg-[#18201e] object-contain" />
         )}
-        <div className="px-4 py-4 sm:px-5">
-          <p className="line-clamp-3 text-sm leading-6 text-[#596963]">{advertisement.description}</p>
-          <Link href={`/ads/${advertisement.id}`} className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-md bg-[#c48738] px-5 text-sm font-bold text-white sm:w-auto">عرض ملف المعلن</Link>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+          {advertisement.reward_badge && <span className="rounded-md bg-[#edf6ef] px-3 py-2 text-sm font-black text-[#39704f]">{advertisement.reward_badge}</span>}
+          <Link href={`/ads/${advertisement.id}`} className="inline-flex h-11 flex-1 items-center justify-center rounded-md bg-[#c48738] px-5 text-sm font-bold text-white">التفاصيل والهدية أو الخصم</Link>
         </div>
       </div>
     </div>
@@ -4906,6 +5171,20 @@ function SettingsManager({
             className="size-4 accent-[#173f3a]"
           />
           إظهار نتائج التارجيت للموظفين
+        </label>
+        <label className="flex items-start gap-3 rounded-xl border border-[#dedfd8] bg-[#f7f7f2] p-3 text-sm font-semibold sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={draft.hourly_reports_enabled !== false}
+            onChange={(event) => setDraft({ ...draft, hourly_reports_enabled: event.target.checked })}
+            className="mt-0.5 size-4 accent-[#173f3a]"
+          />
+          <span>
+            <span className="block">تشغيل تقارير الحجوزات الآلية</span>
+            <span className="mt-1 block text-xs font-normal text-[#72807a]">
+              عند الإيقاف، لن يعيد مسار التقارير بياناته للبريد أو Google Sheets.
+            </span>
+          </span>
         </label>
         {draft.logo_url && (
           <div className="flex items-center gap-3 text-sm text-[#72807a] sm:col-span-2">

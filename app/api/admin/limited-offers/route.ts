@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
   const extension = image.name.toLowerCase().split(".").pop()?.replace(/[^a-z0-9]/g, "") || "img";
   const imagePath = `${randomUUID()}.${extension}`;
-  const { error: uploadError } = await client.storage.from("limited-offer-images").upload(imagePath, image, { contentType: image.type, upsert: false });
+  const { error: uploadError } = await client.storage.from("limited-offer-images").upload(imagePath, image, { contentType: image.type, cacheControl: "31536000", upsert: false });
   if (uploadError) return NextResponse.json({ error: "تعذر رفع صورة العرض" }, { status: 400 });
   const imageUrl = client.storage.from("limited-offer-images").getPublicUrl(imagePath).data.publicUrl;
   const { data, error } = await client.from("limited_offers").insert({
@@ -169,7 +169,7 @@ export async function PATCH(request: NextRequest) {
     if (image instanceof File && image.size > 0) {
       const extension = image.name.toLowerCase().split(".").pop()?.replace(/[^a-z0-9]/g, "") || "img";
       uploadedImagePath = `${randomUUID()}.${extension}`;
-      const { error: uploadError } = await client.storage.from("limited-offer-images").upload(uploadedImagePath, image, { contentType: image.type, upsert: false });
+      const { error: uploadError } = await client.storage.from("limited-offer-images").upload(uploadedImagePath, image, { contentType: image.type, cacheControl: "31536000", upsert: false });
       if (uploadError) return NextResponse.json({ error: "تعذر رفع صورة العرض" }, { status: 400 });
       imageUrl = client.storage.from("limited-offer-images").getPublicUrl(uploadedImagePath).data.publicUrl;
     }

@@ -21,9 +21,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (rewardsEvent && user?.account_type !== "ordinary") {
     return NextResponse.json({ error: "يجب إنشاء حساب مكافآت حتى تستفيد من التفاعل وجني الأرباح." }, { status: 401 });
   }
-  const { error: insertError } = eventType === "share"
-    ? { error: null }
-    : await client.from("advertisement_engagements").insert({ advertisement_id: advertisementId, event_type: eventType, visitor_key: visitorKey });
+  const { error: insertError } = await client.from("advertisement_engagements").insert({
+    advertisement_id: advertisementId,
+    event_type: eventType,
+    visitor_key: visitorKey,
+  });
   let counted = !insertError;
   if (insertError?.code !== "23505" && insertError) return NextResponse.json({ error: insertError.message }, { status: 400 });
   const field = eventType === "view" ? "views" : eventType === "click" ? "clicks" : null;
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     await client.from("advertisements").update({ [field]: Number(currentValue || 0) + 1 }).eq("id", advertisementId);
   }
   let rewardStatus: string | null = null;
-  if (rewardsEvent && user) {
+  if (rewardsEvent && user && counted) {
       const now = new Date().toISOString();
       const { data: campaign } = await client.from("ad_reward_campaigns").select("id,budget,max_recipients,per_user_limit").eq("advertisement_id", advertisementId).eq("status", "active").or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (campaign) {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   Eye,
@@ -127,6 +127,8 @@ export default function AdvertisementProfile({
   const [watchLoginPrompted, setWatchLoginPrompted] = useState(false);
   const [countdownNow, setCountdownNow] = useState<number | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const watchChallengeStarted = useRef(false);
+  const watchChallengeReady = useRef(false);
 
   useEffect(() => {
     const updateNow = () => setCountdownNow(Date.now());
@@ -176,12 +178,45 @@ export default function AdvertisementProfile({
       return result;
     });
 
-  const submitWatchReward = (seconds: number) => {
+  const startWatchChallenge = useCallback(() => {
     if (
-      watchRewardSent ||
-      !advertisement?.watch_required_seconds ||
-      seconds < advertisement.watch_required_seconds
-    )
+      watchChallengeStarted.current ||
+      user?.account_type !== "ordinary" ||
+      !advertisement
+    ) {
+      return;
+    }
+    watchChallengeStarted.current = true;
+    watchChallengeReady.current = false;
+    void fetch(`/api/advertisements/${advertisement.id}/watch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phase: "start" }),
+    })
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "تعذر بدء احتساب المشاهدة");
+        watchChallengeReady.current = true;
+      })
+      .catch(() => {
+        watchChallengeStarted.current = false;
+        watchChallengeReady.current = false;
+      });
+  }, [advertisement, user?.account_type]);
+
+  useEffect(() => {
+    if (user?.account_type === "ordinary" && videoRef.current && !videoRef.current.paused) {
+      startWatchChallenge();
+    }
+  }, [advertisement?.id, startWatchChallenge, user?.account_type]);
+
+  const submitWatchReward = (seconds: number) => {
+    if (watchRewardSent) return;
+    if (!watchChallengeReady.current) {
+      startWatchChallenge();
+      return;
+    }
+    if (!advertisement?.watch_required_seconds || seconds < advertisement.watch_required_seconds)
       return;
     if (user?.account_type !== "ordinary") {
       if (!watchLoginPrompted) {
@@ -194,8 +229,21 @@ export default function AdvertisementProfile({
     void fetch(`/api/advertisements/${advertisement.id}/watch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ watched_seconds: Math.floor(seconds) }),
-    }).catch(() => undefined);
+      body: JSON.stringify({ phase: "complete" }),
+    })
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 425) {
+          window.setTimeout(() => {
+            const video = videoRef.current;
+            if (video && !video.paused) submitWatchReward(video.currentTime);
+            else setWatchRewardSent(false);
+          }, (Number(result.retry_after_seconds) + 1) * 1000);
+          return;
+        }
+        if (!response.ok) throw new Error(result.error || "تعذر تسجيل مكافأة المشاهدة");
+      })
+      .catch(() => setWatchRewardSent(false));
   };
 
   useEffect(() => {
@@ -221,6 +269,8 @@ export default function AdvertisementProfile({
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(data.error || "الإعلان غير متاح");
           setAdvertisement(data);
+          watchChallengeStarted.current = false;
+          watchChallengeReady.current = false;
           void engage(Number(id), "view").then((result) => {
             if (result?.liked) setLiked(true);
             setAdvertisement((current) =>
@@ -419,6 +469,7 @@ export default function AdvertisementProfile({
                   loop
                   playsInline
                   preload="auto"
+                  onPlaying={startWatchChallenge}
                   onTimeUpdate={(event) =>
                     submitWatchReward(event.currentTarget.currentTime)
                   }

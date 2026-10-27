@@ -33,6 +33,21 @@ export async function GET(request: NextRequest) {
   }
 
   const database = createClient(url, key, { auth: { persistSession: false } });
+  const { data: settings, error: settingsError } = await database
+    .from("site_settings")
+    .select("hourly_reports_enabled")
+    .eq("id", 1)
+    .maybeSingle();
+  if (settingsError) {
+    return NextResponse.json({ error: settingsError.message }, { status: 500 });
+  }
+  if (settings?.hourly_reports_enabled === false) {
+    return new Response(null, {
+      status: 204,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
   const fields = "id, customer_name, phone, governorate, district, items, total, status, created_at, status_changed_at, staff_name";
   const [{ data: newBookingDetails, error: bookingsError }, { data: completedOrderDetails, error: completedError }] =
     await Promise.all([

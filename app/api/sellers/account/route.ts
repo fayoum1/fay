@@ -76,7 +76,7 @@ export async function PATCH(request: NextRequest) {
     if (!(file instanceof File) || !file.size) continue;
     if (!file.type.startsWith("image/") || file.size > 3 * 1024 * 1024) return NextResponse.json({ error: "الصورة يجب أن تكون أقل من 3 ميجابايت" }, { status: 400 });
     const path = `${fieldKey === "profile_image_url" ? "profiles" : "covers"}/${user.id}-${Date.now()}-${fieldName}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "")}`;
-    const upload = await client.storage.from("item-images").upload(path, file, { contentType: file.type, upsert: false });
+    const upload = await client.storage.from("item-images").upload(path, file, { contentType: file.type, cacheControl: "31536000", upsert: false });
     if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 400 });
     updates[fieldKey] = client.storage.from("item-images").getPublicUrl(path).data.publicUrl;
   }
