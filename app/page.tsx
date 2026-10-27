@@ -3951,9 +3951,8 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
       const offer = item.value;
       return (
         <button type="button" onClick={() => onOfferSelect(offer)} className="grid w-full grid-cols-1 gap-2 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right shadow-sm sm:h-[158px] sm:grid-cols-[190px_minmax(0,1fr)] sm:items-center sm:gap-3">
-          <img src={offer.image_url} alt="" className="h-[60dvh] min-h-[320px] max-h-[680px] w-full rounded-md bg-[#18201e] object-contain sm:h-[138px] sm:min-h-0 sm:max-h-none sm:bg-[#eef0ea] sm:object-cover" />
+          <img src={offer.image_url} alt="" className="h-[34dvh] min-h-[200px] max-h-[340px] w-full rounded-md bg-[#f2f1ed] object-cover sm:h-[138px] sm:min-h-0 sm:max-h-none sm:bg-[#eef0ea]" />
           <span className="min-w-0 space-y-1">
-            <span className="block text-[10px] font-bold text-[#a66c20]">عرض محدود</span>
             <span className="block whitespace-normal text-sm font-bold text-[#173f3a] sm:truncate">{offer.title}</span>
             <span className="block whitespace-normal text-xs font-bold text-[#39704f] sm:truncate">{offer.item_name} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `${offer.quantity_per_user} لكل مستفيد`}</span>
             <span className="block whitespace-normal text-xs leading-5 text-[#596963] sm:line-clamp-2">{offer.description}</span>
@@ -3968,11 +3967,11 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
     const advertisement = item.value;
     return (
       <article className="overflow-hidden rounded-xl border border-[#dfe5dc] bg-white shadow-sm">
-        <div className="grid h-[60dvh] min-h-[320px] max-h-[680px] w-full place-items-center overflow-hidden bg-[#18201e] sm:h-[52dvh] sm:min-h-[320px] sm:max-h-[560px]">
+        <div className="grid h-[34dvh] min-h-[200px] max-h-[340px] w-full place-items-center overflow-hidden bg-[#f2f1ed] sm:h-[52dvh] sm:min-h-[320px] sm:max-h-[560px]">
           {advertisement.media_type === "video" && advertisement.video_url ? (
-            <video src={advertisement.video_url} muted autoPlay loop playsInline preload="metadata" className="size-full object-contain" />
+            <video src={advertisement.video_url} muted autoPlay loop playsInline preload="metadata" className="size-full object-cover" />
           ) : advertisement.image_url ? (
-            <img src={advertisement.image_url} alt={advertisement.title} className="size-full object-contain" />
+            <img src={advertisement.image_url} alt={advertisement.title} className="size-full object-cover" />
           ) : (
             <div className="text-sm font-bold text-white">إعلان ممول</div>
           )}
@@ -4009,8 +4008,8 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
 
   return (
     <section className="my-2 overflow-hidden" aria-label="الإعلانات والعروض المحدودة">
-      {(offers.length > 0 || !advertisements.length) && (
-        <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">{offers.length && advertisements.length ? "إعلانات وعروض محدودة" : offers.length ? "عروض محدودة" : "إعلانات ممولة"}</h2>
+      {!offers.length && advertisements.length > 0 && (
+        <h2 className="mb-2 px-1 text-sm font-bold text-[#173f3a]">إعلانات ممولة</h2>
       )}
       {feed.length > 1 && (isManualMode || !config.auto_play) && (
         <div className="mb-2 flex items-center justify-end gap-2 px-1">
