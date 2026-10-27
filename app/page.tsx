@@ -2094,7 +2094,7 @@ export default function Home() {
               onPopupClose={() => setFeaturedLimitedOffer(null)}
               onOffersChange={setLimitedOffers}
             />
-            <div className="grid min-w-0 gap-3 pr-1">
+            <div className="order-3 grid min-w-0 gap-3 pr-1">
               {filteredItems.map((item) => (
                 <article
                   key={item.id}
@@ -3950,13 +3950,13 @@ function AdvertisementStrip({ advertisements, offers, onOfferSelect, config }: {
     if (item.kind === "offer") {
       const offer = item.value;
       return (
-        <button type="button" onClick={() => onOfferSelect(offer)} className="grid h-[158px] w-full grid-cols-[140px_minmax(0,1fr)] items-center gap-3 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right shadow-sm sm:grid-cols-[190px_minmax(0,1fr)]">
-          <img src={offer.image_url} alt="" className="h-[138px] w-full rounded-md bg-[#eef0ea] object-cover" />
+        <button type="button" onClick={() => onOfferSelect(offer)} className="grid w-full grid-cols-1 gap-2 rounded-md border border-[#dfe5dc] bg-white p-2.5 text-right shadow-sm sm:h-[158px] sm:grid-cols-[190px_minmax(0,1fr)] sm:items-center sm:gap-3">
+          <img src={offer.image_url} alt="" className="h-[60dvh] min-h-[320px] max-h-[680px] w-full rounded-md bg-[#18201e] object-contain sm:h-[138px] sm:min-h-0 sm:max-h-none sm:bg-[#eef0ea] sm:object-cover" />
           <span className="min-w-0 space-y-1">
             <span className="block text-[10px] font-bold text-[#a66c20]">عرض محدود</span>
-            <span className="block truncate text-sm font-bold text-[#173f3a]">{offer.title}</span>
-            <span className="block truncate text-xs font-bold text-[#39704f]">{offer.item_name} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `${offer.quantity_per_user} لكل مستفيد`}</span>
-            <span className="block line-clamp-2 text-xs leading-5 text-[#596963]">{offer.description}</span>
+            <span className="block whitespace-normal text-sm font-bold text-[#173f3a] sm:truncate">{offer.title}</span>
+            <span className="block whitespace-normal text-xs font-bold text-[#39704f] sm:truncate">{offer.item_name} · {offer.quantity_per_user === null ? "الكمية لم تحدد بعد" : `${offer.quantity_per_user} لكل مستفيد`}</span>
+            <span className="block whitespace-normal text-xs leading-5 text-[#596963] sm:line-clamp-2">{offer.description}</span>
             <span className="inline-flex rounded-md bg-[#39704f] px-2.5 py-1 text-[10px] font-black text-white">
               {offer.remaining === null ? "التسجيل متاح" : offer.remaining === 0 ? "اكتمل العدد" : `متبقي ${offer.remaining} من ${offer.max_recipients}`}
             </span>
